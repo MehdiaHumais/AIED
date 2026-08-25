@@ -1,0 +1,150 @@
+{
+  "id": "ux_pattern_library",
+  "name": "UX Pattern Library",
+  "description": "Reusable interaction patterns with when-to-use rules. Pick the right pattern and apply the standard behavior.",
+  "icon": "Workflow",
+  "accent": "cyan",
+  "tags": ["patterns", "interaction", "components", "ui"],
+  "categories": [
+    {
+      "id": "wizards-forms",
+      "name": "Wizards & Forms",
+      "description": "Multi-step data collection.",
+      "items": [
+        {
+          "id": "wizard-pattern",
+          "title": "Wizard / multi-step form",
+          "summary": "Use for 8+ fields or complex setups. One question per step (or a logical group), progress indicator, back + save draft.",
+          "content": "Break long/complex collections into steps with a clear progress indicator. Each step groups related fields. Always allow going back without losing data and save drafts. Validate per-step so users fix errors immediately.",
+          "rules": ["Show progress indicator", "Per-step validation", "Back without data loss", "Save draft"],
+          "tags": ["wizard", "multi-step", "form"]
+        },
+        {
+          "id": "inline-form",
+          "title": "Inline editing",
+          "summary": "Edit-in-place for small data changes: click to edit, autosave or explicit save, ESC cancels.",
+          "content": "For single-field or small edits, inline editing beats a dialog. Click value -> input -> save on blur/Enter, ESC cancels. Show saved confirmation subtly. Don't use inline editing for multi-field records.",
+          "rules": ["Single field per inline edit", "Enter saves, ESC cancels", "Subtle save confirmation"],
+          "tags": ["inline-edit", "form"]
+        }
+      ]
+    },
+    {
+      "id": "data-display",
+      "name": "Data Display",
+      "description": "How to present collections and hierarchies.",
+      "items": [
+        {
+          "id": "kanban-pattern",
+          "title": "Kanban board",
+          "summary": "Use for stage-based workflows (sales, dev, hiring). Columns = stages, drag between columns, column limits.",
+          "content": "Kanban works when items move through discrete stages. Dragging updates state. Support keyboard alternatives (move via menu). Optional column WIP limits. On mobile, fall back to a list grouped by stage.",
+          "rules": ["Columns = stages", "Drag + keyboard move", "Mobile falls back to list"],
+          "tags": ["kanban", "board", "workflow"]
+        },
+        {
+          "id": "data-table-pattern",
+          "title": "Data table",
+          "summary": "Use for dense comparison/scanning. Sortable columns, filters, pagination, selection, column visibility.",
+          "content": "Tables are for scanning many records. Provide sortable headers, column filters, bulk selection, and configurable columns. Keep one action row per record with primary action always visible. Row detail opens in a drawer/panel for context.",
+          "rules": ["Sortable + filterable", "Bulk selection", "Primary action per row", "Detail via drawer"],
+          "tags": ["data-table", "list", "data"]
+        },
+        {
+          "id": "timeline-pattern",
+          "title": "Timeline",
+          "summary": "Use for chronological activity (audit logs, project history, chat transcripts). Newest first by default.",
+          "content": "Timelines show ordered events with clear timestamps, actor, and action. Group by day. Filter by event type. Provide 'jump to' for long histories. Never overload a single node - a summary with expand is better.",
+          "rules": ["Chronological with timestamps", "Group by day", "Filter by type"],
+          "tags": ["timeline", "history", "activity"]
+        },
+        {
+          "id": "dashboard-widgets",
+          "title": "Dashboard widgets",
+          "summary": "KPI cards with trend, charts that answer a question, and drill-down on click.",
+          "content": "KPI cards: value + delta vs previous period + sparkline. Every widget needs a title and an answerable question. Clicking drills to detail. Keep 4-8 widgets per dashboard - more causes paralysis. Always allow time-range switching.",
+          "rules": ["KPI card = value + trend", "Widget answers one question", "4-8 widgets max", "Drill-down on click"],
+          "tags": ["dashboard", "kpi", "analytics"]
+        },
+        {
+          "id": "calendar-pattern",
+          "title": "Calendar / schedule",
+          "summary": "Day/week/month views, click-to-create with prefilled slot, drag-to-reschedule.",
+          "content": "Support month/week/day views. Clicking an empty slot opens create with that time prefilled. Drag existing events to reschedule. Handle all-day events and time zones correctly.",
+          "rules": ["Month/week/day views", "Click slot = create prefilled", "Drag reschedule", "Timezone-correct"],
+          "tags": ["calendar", "schedule", "booking"]
+        }
+      ]
+    },
+    {
+      "id": "commands-search",
+      "name": "Search & Commands",
+      "description": "Fast retrieval and action.",
+      "items": [
+        {
+          "id": "command-palette",
+          "title": "Command palette",
+          "summary": "Ctrl/Cmd+K overlay that searches actions, pages, and records; keyboard-first with fuzzy matching.",
+          "content": "The command palette is the power-user hub. One shortcut opens it, type to fuzzy-match, arrows to navigate sections, Enter to run. Show grouped results (Actions / Pages / Records) with icons and shortcuts.",
+          "rules": ["Single shortcut (Ctrl/Cmd+K)", "Fuzzy matching", "Grouped results", "Full keyboard support"],
+          "tags": ["command-palette", "search", "keyboard"]
+        },
+        {
+          "id": "search-pattern",
+          "title": "Search behavior",
+          "summary": "Instant results with debounce, highlight matches, recent searches, and empty-result guidance.",
+          "content": "Search should feel instant (debounce ~250ms). Show matched terms highlighted, recent searches first, then results. On no results, offer suggestions or a clear 'try these terms'. Global search covers records + actions.",
+          "rules": ["Debounced instant results", "Highlight matches", "Recent searches", "No-result guidance"],
+          "tags": ["search", "retrieval"]
+        }
+      ]
+    },
+    {
+      "id": "actions-flows",
+      "name": "Actions & Flows",
+      "description": "Bulk, drag, approval and conversation interactions.",
+      "items": [
+        {
+          "id": "bulk-action-pattern",
+          "title": "Bulk actions",
+          "summary": "Multi-select shows a sticky toolbar with count; dangerous bulk actions get a confirmation.",
+          "content": "Selecting multiple rows reveals a toolbar (count + actions). Support select-all. Destructive bulk actions (bulk delete) require explicit confirmation with the count. Provide undo where possible.",
+          "rules": ["Toolbar with count on selection", "Confirm destructive bulk actions", "Undo where possible"],
+          "tags": ["bulk", "selection", "toolbar"]
+        },
+        {
+          "id": "drag-drop-pattern",
+          "title": "Drag & drop",
+          "summary": "Provide visual feedback, snap targets, drop indicators, and keyboard alternatives for every drop.",
+          "content": "Drag-and-drop needs clear affordance (grab handle), live feedback while dragging, snap-zone highlighting, and a keyboard path (move menu). Never make functionality only available via drag.",
+          "rules": ["Grab handle affordance", "Live drop indicators", "Keyboard alternative required"],
+          "tags": ["drag-drop", "reorder", "accessibility"]
+        },
+        {
+          "id": "approval-flow",
+          "title": "Approval flow",
+          "summary": "Submit -> notify approver -> approve/reject with reason -> notify submitter. Deadlines and escalation.",
+          "content": "Approvals: submitter sees status; approver gets notified with full context and a decision (with reason if rejected). Add SLA deadlines with escalation reminders. Rejection gives a clear reason and next step.",
+          "rules": ["Status visible to submitter", "Reason required on reject", "SLA + escalation"],
+          "tags": ["approval", "workflow", "review"]
+        },
+        {
+          "id": "chat-interface",
+          "title": "Chat interface",
+          "summary": "For conversations: message bubbles, typing indicator, timestamps, attachments, and persistence.",
+          "content": "Chat keeps history persistent, shows sender + timestamp, typing indicator, and supports attachments/emojis where appropriate. Provide search within conversation. Unread counts and notifications matter for async team chat.",
+          "rules": ["Persistent history + search", "Typing indicator", "Sender + timestamp on messages"],
+          "tags": ["chat", "messaging", "conversation"]
+        },
+        {
+          "id": "notification-pattern",
+          "title": "Notifications",
+          "summary": "In-app bell with unread counts, toast for ephemeral feedback, per-type preferences, and digest option.",
+          "content": "Three kinds: in-app feed (persistent), toasts (ephemeral success/errors), and push/email (optional). Users control which types they receive. Batch emails into a digest to avoid noise.",
+          "rules": ["Bell + unread count", "Toasts for ephemeral events", "Per-type preferences"],
+          "tags": ["notification", "toast", "feedback"]
+        }
+      ]
+    }
+  ]
+}

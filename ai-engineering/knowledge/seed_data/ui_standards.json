@@ -1,0 +1,205 @@
+{
+  "id": "ui_standards",
+  "name": "UI Standards",
+  "description": "Company-wide visual and component standards. Every review agent references these rules before recommending any visual change. Ensures every product we ship looks like it belongs to the same company.",
+  "icon": "Palette",
+  "accent": "pink",
+  "tags": ["ui", "design", "components", "design-system", "visual"],
+  "categories": [
+    {
+      "id": "layout-spacing",
+      "name": "Layout, Grid & Spacing",
+      "description": "Consistent layout rhythm across all screens and breakpoints.",
+      "items": [
+        {
+          "id": "spacing-scale",
+          "title": "Spacing scale (4px base)",
+          "summary": "Use a 4px spacing scale: 4, 8, 12, 16, 24, 32, 48, 64. Never use arbitrary pixel values.",
+          "content": "All spacing must come from the 4px base scale so pages align vertically and horizontally. Gaps between sibling elements: 16px (desktop) / 12px (mobile). Section padding: 48px desktop, 24px mobile.",
+          "rules": ["Only use 4/8/12/16/24/32/48/64 px spacing", "Sibling gap: 16px desktop, 12px mobile", "Section padding: 48px desktop, 24px mobile"],
+          "tags": ["spacing", "layout"]
+        },
+        {
+          "id": "grid-system",
+          "title": "Responsive grid",
+          "summary": "12-column grid on desktop, 4-column on mobile. Breakpoints: 640, 768, 1024, 1280.",
+          "content": "Use a 12-column fluid grid at desktop widths and 4-column stack below 640px. Max content width 1200px centered. Never allow content to touch screen edges - always keep a 16px minimum gutter.",
+          "rules": ["12 columns desktop, 4 columns mobile", "Max content width 1200px", "Minimum 16px edge gutter"],
+          "tags": ["grid", "responsive"]
+        },
+        {
+          "id": "container-heights",
+          "title": "Standard heights",
+          "summary": "Inputs 40px, buttons 40px desktop / 48px mobile, header 64px, sidebar 260px.",
+          "content": "Input fields and secondary buttons: 40px tall. Primary touch targets on mobile: minimum 48x48px. Page header 64px. Application sidebar 260px wide, collapsible to 64px.",
+          "rules": ["Controls 40px tall on desktop", "Touch targets minimum 48x48 on mobile", "Header 64px, sidebar 260px"],
+          "tags": ["height", "layout"]
+        }
+      ]
+    },
+    {
+      "id": "buttons",
+      "name": "Buttons",
+      "description": "Button anatomy, states and hierarchy.",
+      "items": [
+        {
+          "id": "button-hierarchy",
+          "title": "Button hierarchy",
+          "summary": "Exactly one primary action per view. Primary (filled), secondary (outline), tertiary (ghost/text).",
+          "content": "Every view should have a single dominant primary button. Use three levels: Primary (filled accent) for the main action, Secondary (outline) for alternatives, Tertiary (text/ghost) for low-importance actions. Danger actions use red only when the action is destructive or irreversible.",
+          "rules": ["One primary action per view", "Primary = filled accent", "Danger = red, reserved for destructive/irreversible actions"],
+          "tags": ["button", "cta", "hierarchy"]
+        },
+        {
+          "id": "button-radius",
+          "title": "Border radius",
+          "summary": "Buttons 8px radius, cards 12px, modals 16px, pills 999px.",
+          "content": "Consistent radius creates a recognizable brand. Buttons and inputs: 8px. Cards: 12px. Modals/dialogs: 16px. Badges and pills: 999px. Never mix radius styles inside the same component family.",
+          "rules": ["Buttons/inputs 8px", "Cards 12px", "Modals 16px", "Pills 999px"],
+          "tags": ["radius", "button", "card"]
+        },
+        {
+          "id": "button-states",
+          "title": "Button states",
+          "summary": "Default, hover, active, focus, disabled, loading - every state must be visibly distinct.",
+          "content": "Hover: 5% brightness/alpha change. Active: 2px pressed offset. Focus: 2px focus ring. Disabled: 40% opacity, no hover. Loading: spinner replaces label, same dimensions so no layout shift.",
+          "rules": ["All 6 states must be implemented", "Focus ring always visible for keyboard users", "Loading state must not change button width"],
+          "tags": ["button", "states", "interaction"]
+        },
+        {
+          "id": "buy-now-icon",
+          "title": "Purchase / Buy Now iconography",
+          "summary": "Use a shopping-bag or cart icon with the label 'Buy Now'; place on the primary CTA. Icon is decorative - never rely on icon alone.",
+          "content": "For commerce products the purchase CTA should pair a simple, universally recognized icon (shopping bag preferred; cart as fallback) with explicit text. The icon alone must never carry the meaning - always include the words. Keep the icon 16-20px, left of the label, same fill as the button text.",
+          "rules": ["Pair icon + explicit label (never icon-only)", "Shopping bag icon preferred for purchase CTAs", "Icon 16-20px, left of label", "Keep consistent across all purchase surfaces"],
+          "tags": ["icon", "buy-now", "commerce", "cta"]
+        }
+      ]
+    },
+    {
+      "id": "color-typography",
+      "name": "Color & Typography",
+      "description": "Brand tokens and type scale.",
+      "items": [
+        {
+          "id": "color-tokens",
+          "title": "Color tokens",
+          "summary": "Use semantic tokens (background, foreground, primary, secondary, muted, border, destructive) - never raw hex in components.",
+          "content": "All components must reference semantic tokens. Primary = brand accent, used sparingly on the main actions. Muted = secondary information. Border = hairline separators. Destructive = errors/danger. Accent coverage must never exceed ~10% of any screen.",
+          "rules": ["Components use tokens only", "Primary accent covers <10% of screen", "Destructive only for errors/danger"],
+          "tags": ["color", "tokens", "theme"]
+        },
+        {
+          "id": "contrast-min",
+          "title": "Color contrast minimums",
+          "summary": "Body text 4.5:1, large text 3:1, UI components 3:1 against adjacent colors.",
+          "content": "Normal text must hit 4.5:1 contrast against its background; large text (18px+ / 14px bold+) 3:1; meaningful UI components and icons 3:1. Check in dark and light mode.",
+          "rules": ["Body 4.5:1", "Large text 3:1", "UI components 3:1"],
+          "tags": ["color", "contrast", "accessibility"]
+        },
+        {
+          "id": "type-scale",
+          "title": "Type scale",
+          "summary": "1.25 modular scale: 12/14/16/20/24/32/40. Base 16px. Line-height 1.5 body, 1.2 headings.",
+          "content": "Base font size 16px (14px minimum for body content, never below 12px). Scale: 12 caption, 14 secondary, 16 body, 20 subheading, 24 section title, 32 page title, 40 hero. Headings use 1.2 line-height, body 1.5. Max line length 70-80 characters.",
+          "rules": ["Base 16px, minimum body 14px", "Never below 12px for any UI text", "Line length max 80ch"],
+          "tags": ["typography", "type-scale"]
+        },
+        {
+          "id": "font-weights",
+          "title": "Font weights",
+          "summary": "Only 400 (regular), 500 (medium), 600 (semibold), 700 (bold). Avoid italic for long text.",
+          "content": "Use a limited weight palette. Headings 700, subheadings 600, emphasis 500, body 400. Never fake-bold or fake-italic. Avoid italics for sentences longer than a phrase.",
+          "rules": ["Only 400/500/600/700", "Headings 700, body 400"],
+          "tags": ["typography", "font"]
+        }
+      ]
+    },
+    {
+      "id": "components",
+      "name": "Core Components",
+      "description": "Cards, tables, forms, dialogs, navigation chrome.",
+      "items": [
+        {
+          "id": "card-style",
+          "title": "Card style",
+          "summary": "Background + 1px hairline border + 12px radius + 24px padding. Shadow only to raise depth.",
+          "content": "Cards use background vs background-muted distinction with a 1px border. Default padding 24px (16px mobile). Elevate cards with shadow only when stacking (hover or modal context). Never nest cards more than one level deep.",
+          "rules": ["12px radius, 24px padding (16px mobile)", "1px hairline border", "Max 1 nested card level"],
+          "tags": ["card", "surface"]
+        },
+        {
+          "id": "table-standards",
+          "title": "Data table standards",
+          "summary": "Sticky header, zebra-free, right-aligned numbers, 40px row height, sortable columns, empty state required.",
+          "content": "Column headers are short and sortable. Numeric columns right-aligned, text left-aligned. Rows 40px with 16px horizontal padding. Use row hover highlight instead of zebra striping. Every table needs an empty state with a call to action. Show 10-25 rows per page with pagination or infinite scroll.",
+          "rules": ["Numbers right-aligned", "Row height 40px", "Always render an empty state", "Hover highlight, not zebra"],
+          "tags": ["table", "data", "component"]
+        },
+        {
+          "id": "form-standards",
+          "title": "Form standards",
+          "summary": "Label above field, 40px fields, inline validation on blur, clear errors with helper text, disabled submit until required fields valid.",
+          "content": "Labels always visible above fields (never placeholder-as-label). Fields 40px. Validate inline on blur, show error text below the field with red border and the specific problem. Success on submit. Group related fields, mark optional fields not required ones.",
+          "rules": ["Labels above fields, never placeholder as label", "Inline validation on blur", "Error text below field + red border", "Submit disabled until required fields valid"],
+          "tags": ["form", "input", "validation"]
+        },
+        {
+          "id": "dialog-standards",
+          "title": "Dialog / modal standards",
+          "summary": "16px radius, centered, focus trapped, ESC closes, backdrop click closes non-destructive dialogs only.",
+          "content": "Dialogs are for focused tasks or confirmations, not navigation. Focus must trap inside. ESC closes. Backdrop click closes only for non-destructive content. Max width 480px for dialogs (wider for task flows). Always restore focus to the trigger on close.",
+          "rules": ["Focus trapped inside", "ESC closes", "Backdrop closes non-destructive only", "Restore focus to trigger"],
+          "tags": ["dialog", "modal", "component"]
+        },
+        {
+          "id": "navigation-chrome",
+          "title": "Sidebar, navbar & footer",
+          "summary": "Sidebar 260px with active item highlight, sticky navbar 64px, footer with logo + links + legal.",
+          "content": "Sidebar groups navigation into sections with clear active indicators. Navbar: logo left, primary actions right, sticky, 64px. Footer includes product links, legal links, social, and copyright. On mobile collapse sidebar to a drawer.",
+          "rules": ["Sidebar 260px, collapsible to 64px", "Sticky 64px navbar", "Mobile = drawer navigation"],
+          "tags": ["sidebar", "navbar", "footer"]
+        }
+      ]
+    },
+    {
+      "id": "states-feedback",
+      "name": "States & Feedback",
+      "description": "Empty, loading, error and success states.",
+      "items": [
+        {
+          "id": "empty-state",
+          "title": "Empty state",
+          "summary": "Every empty view shows: illustration/icon, what's missing, why it matters, and one primary action.",
+          "content": "Never show a blank page. Empty states combine a simple illustration or icon, a one-line explanation, and a single clear action that creates the missing content. Frame it positively (what the user can do) rather than what's absent.",
+          "rules": ["Icon/illustration + explanation + action", "One primary action per empty state"],
+          "tags": ["empty-state", "feedback"]
+        },
+        {
+          "id": "loading-state",
+          "title": "Loading state",
+          "summary": "Skeleton screens for content, spinners for actions. Nothing should exceed 3s without feedback.",
+          "content": "Use skeleton placeholders matching final layout for page/component loads, spinners for in-button actions. Every async action needs a visual state within 100ms. If an operation may exceed 3s, show progress or status text.",
+          "rules": ["Skeletons for content loads", "Spinner for actions", "Feedback within 100ms"],
+          "tags": ["loading", "feedback"]
+        },
+        {
+          "id": "error-state",
+          "title": "Error state",
+          "summary": "State what failed, why (plain language), and how to fix or retry. Never raw error codes as primary text.",
+          "content": "Errors explain the problem in plain language, point to the cause, and offer a fix (button to retry or correct). Connection errors offer retry with auto-backoff. Raw stack traces/codes go in secondary text or logs only.",
+          "rules": ["Plain-language explanation", "Actionable fix or retry", "No raw errors as primary text"],
+          "tags": ["error", "feedback"]
+        },
+        {
+          "id": "success-state",
+          "title": "Success / confirmation",
+          "summary": "Confirm success inline or with a lightweight toast, then show the next step.",
+          "content": "Success feedback should be immediate but unobtrusive: inline confirmation near the action or a toast. For irreversible actions, confirm before executing. After success, always offer or show the natural next step.",
+          "rules": ["Immediate, unobtrusive success feedback", "Confirm irreversible actions before executing", "Show next step after success"],
+          "tags": ["success", "feedback", "confirmation"]
+        }
+      ]
+    }
+  ]
+}

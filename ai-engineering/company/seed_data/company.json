@@ -1,0 +1,112 @@
+{
+  "profile": {
+    "name": "BritSync International",
+    "tagline": "Tech division of NobleRoot Ltd | Powered by Ascentra Global Ltd",
+    "about": "BritSync International is the AI engineering and digital marketing division of NobleRoot Ltd. We build AI infrastructure for the future world — voice agents, agentic AI, marketing bots, content automation, ERP, and custom apps.",
+    "mission": "Empower businesses and talent through practical AI innovation.",
+    "website": "",
+    "email": "",
+    "phone": "",
+    "address": "London, UK",
+    "founded": "October 2023",
+    "industry": "AI Engineering & Digital Marketing",
+    "logo_url": "",
+    "social_links": {},
+    "extra_fields": {
+      "Parent Company": "NobleRoot Ltd.",
+      "Business Wings": "Noblesource (merchandising, gemstones), Britsync (social media, marketing, AI engineering), Noblestudy (student admissions)",
+      "Workforce": "5 employees, 3 lifetime directors, 3 external advisors, 38 AI robots",
+      "Y2 Revenue Target": "£150,000",
+      "Q1 Secured": "£18,000",
+      "Expanding To": "Dubai, Belgium, Luxembourg, USA",
+      "Intern Batches": "6 completed, 7th running"
+    },
+    "updated_at": "2026-08-19T00:00:00Z"
+  },
+  "projects": [
+    {
+      "id": "leadhunt",
+      "name": "LeadHunter",
+      "description": "Lead generation and email outreach automation tool. Helps businesses find and connect with potential customers through automated email campaigns.",
+      "status": "active",
+      "folder_path": "",
+      "deployment_url": "",
+      "tech_stack": "",
+      "tags": ["lead-gen", "email", "automation", "saas"],
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-08-19T00:00:00Z"
+    },
+    {
+      "id": "brittrade",
+      "name": "BritTrade",
+      "description": "AI-powered cryptocurrency trading bot. Uses machine learning algorithms to analyze market trends and execute trades.",
+      "status": "active",
+      "folder_path": "",
+      "deployment_url": "",
+      "tech_stack": "",
+      "tags": ["crypto", "trading", "ai", "fintech"],
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-08-19T00:00:00Z"
+    },
+    {
+      "id": "brittube",
+      "name": "BritTube",
+      "description": "AI long-form video generation platform. Creates professional videos from text prompts using AI.",
+      "status": "active",
+      "folder_path": "",
+      "deployment_url": "",
+      "tech_stack": "",
+      "tags": ["video", "ai", "content", "media"],
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-08-19T00:00:00Z"
+    },
+    {
+      "id": "britsee",
+      "name": "BritSee",
+      "description": "Team AI chat with private memory layers. Launched May 2026. Enables teams to collaborate with AI while maintaining data privacy.",
+      "status": "active",
+      "folder_path": "",
+      "deployment_url": "",
+      "tech_stack": "",
+      "tags": ["chat", "ai", "team", "privacy", "launched"],
+      "created_at": "2026-05-01T00:00:00Z",
+      "updated_at": "2026-08-19T00:00:00Z"
+    },
+    {
+      "id": "ukgov-fw",
+      "name": "UK Gov Cyber Security Firewall",
+      "description": "Military-grade firewall for UK government. Deployed through a 3rd party vendor.",
+      "status": "active",
+      "folder_path": "",
+      "deployment_url": "",
+      "tech_stack": "",
+      "tags": ["government", "security", "firewall", "enterprise"],
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-08-19T00:00:00Z"
+    },
+    {
+      "id": "cardless-atm",
+      "name": "Cardless ATM Authenticator",
+      "description": "Cardless ATM authentication system for banking. Enables users to authenticate ATM transactions without physical cards.",
+      "status": "in_development",
+      "folder_path": "",
+      "deployment_url": "",
+      "tech_stack": "",
+      "tags": ["banking", "authentication", "fintech", "security"],
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-08-19T00:00:00Z"
+    },
+    {
+      "id": "ai-olympiad",
+      "name": "Global AI Olympiad",
+      "description": "Worldwide AI talent and infrastructure initiative. Launching this month. Identifies and nurtures AI talent globally.",
+      "status": "in_development",
+      "folder_path": "",
+      "deployment_url": "",
+      "tech_stack": "",
+      "tags": ["ai", "talent", "global", "education", "launching"],
+      "created_at": "2026-08-01T00:00:00Z",
+      "updated_at": "2026-08-19T00:00:00Z"
+    }
+  ]
+}

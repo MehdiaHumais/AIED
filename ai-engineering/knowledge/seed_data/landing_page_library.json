@@ -1,0 +1,158 @@
+{
+  "id": "landing_page_library",
+  "name": "Landing Page Library",
+  "description": "High-converting landing page structures by product type. Every landing page is built from these proven sections in this order.",
+  "icon": "LayoutTemplate",
+  "accent": "amber",
+  "tags": ["landing", "marketing", "conversion", "copy", "sales-page"],
+  "categories": [
+    {
+      "id": "page-architecture",
+      "name": "Page Architecture",
+      "description": "The universal high-converting section order.",
+      "items": [
+        {
+          "id": "section-order",
+          "title": "High-converting section order",
+          "summary": "Hero -> social proof bar -> problem -> solution/benefits -> features -> how it works -> comparison -> testimonials -> pricing -> FAQ -> guarantee -> final CTA -> footer.",
+          "content": "This is the canonical order proven across SaaS. Lead with the customer's outcome in the hero, build trust with a social proof bar, confirm the problem, present the solution and benefits, prove it with features and comparison, de-risk with testimonials + guarantee, answer objections in FAQ, and end with a final CTA that repeats the primary offer.",
+          "rules": ["Follow the canonical section order", "Every section has one purpose", "Final CTA repeats the primary offer"],
+          "tags": ["landing", "structure", "conversion"]
+        },
+        {
+          "id": "above-the-fold",
+          "title": "Above the fold (hero)",
+          "summary": "Within 2 seconds: headline, subheadline, one primary CTA, one trust signal. Nothing else competes.",
+          "content": "The hero decides whether visitors stay. A single promise-focused headline, a subheadline that explains who it's for and what changes, one primary CTA button, and one trust line (users, rating, or 'No credit card'). Remove navigation clutter - minimal links.",
+          "rules": ["One headline, one subheadline", "One primary CTA above the fold", "One trust signal in the hero", "Minimal nav links in hero"],
+          "tags": ["hero", "above-the-fold", "cta"]
+        },
+        {
+          "id": "social-proof-bar",
+          "title": "Social proof bar",
+          "summary": "A logo strip or key metric line directly below the hero: 'Trusted by 4,000+ teams' with recognizable logos.",
+          "content": "Social proof immediately after the hero is highest-leverage. Use recognizable customer logos, or a metric line with a specific number. Logos build authority; numbers build credibility. Never use vague claims.",
+          "rules": ["Place directly below hero", "Real logos or specific numbers", "Never vague claims"],
+          "tags": ["social-proof", "trust", "logos"]
+        }
+      ]
+    },
+    {
+      "id": "cta-copy",
+      "name": "CTA & Copy",
+      "description": "Words that make people click.",
+      "items": [
+        {
+          "id": "cta-copy-rules",
+          "title": "CTA copy rules",
+          "summary": "Lead with the value the user gets, use first-person where possible ('Start my free trial'), and be specific.",
+          "content": "Button labels should describe the outcome, not the action. Weak: 'Submit'. Strong: 'Start free trial', 'Get my proposal', 'Create my store'. Use first-person phrasing when testing shows lift. Keep CTA copy under 30 characters.",
+          "rules": ["Describe outcome, not action", "Under 30 characters", "First-person CTA copy when it wins tests"],
+          "tags": ["cta", "copy", "microcopy"]
+        },
+        {
+          "id": "headline-formulas",
+          "title": "Headline formulas",
+          "summary": "1) Outcome + timeframe. 2) Who it's for + transformation. 3) Specific problem + specific fix.",
+          "content": "Three reliable formulas: (1) 'Build your landing page in minutes, not weeks'; (2) 'The HR system for growing teams that don't want to hire an HR team'; (3) 'Stop losing deals to slow follow-up'. Quantify whenever possible.",
+          "rules": ["Use one proven formula", "Quantify outcomes where possible", "No jargon or buzzwords"],
+          "tags": ["headline", "copy", "positioning"]
+        },
+        {
+          "id": "objection-handling",
+          "title": "Objection handling",
+          "summary": "Address price, effort, and risk objections with comparison tables, FAQ, guarantee, and free trial.",
+          "content": "The three universal objections are price, effort, and risk. Answer them directly: comparison table (price/value), 'How it works' (effort), free trial + guarantee (risk). Place answers before the pricing section.",
+          "rules": ["Answer price, effort, risk", "Comparison table before pricing", "Guarantee near final CTA"],
+          "tags": ["objections", "copy", "conversion"]
+        }
+      ]
+    },
+    {
+      "id": "offer-elements",
+      "name": "Offer Elements",
+      "description": "Pricing, guarantee and risk reversal.",
+      "items": [
+        {
+          "id": "pricing-section",
+          "title": "Pricing section rules",
+          "summary": "3 tiers, middle tier highlighted as 'Most popular', annual toggle with visible savings, monthly price always visible.",
+          "content": "Three tiers is the conversion sweet spot. Highlight the middle tier. Annual billing toggle showing 'Save 20%'. Avoid pricing hidden behind 'Contact sales' except for enterprise-only products. Show what's in each tier explicitly.",
+          "rules": ["3 tiers, middle highlighted", "Annual/monthly toggle with savings", "Tier contents explicit", "Avoid hidden pricing"],
+          "tags": ["pricing", "tiers", "conversion"]
+        },
+        {
+          "id": "guarantee",
+          "title": "Guarantee & risk reversal",
+          "summary": "A strong, specific guarantee ('30-day money-back, no questions') placed next to the final CTA.",
+          "content": "Risk reversal is a top conversion lever. Make guarantees specific and unconditional. Show them beside the CTA, in the FAQ, and at the footer. For SaaS, 'cancel anytime' or free trial serves the same role.",
+          "rules": ["Specific + unconditional guarantee", "Guarantee visible at final CTA", "Back it up in FAQ"],
+          "tags": ["guarantee", "risk-reversal", "trust"]
+        },
+        {
+          "id": "lead-magnet",
+          "title": "Lead magnet (B2B)",
+          "summary": "Offer a valuable free asset (template, checklist, report) in exchange for an email - email capture is above the fold for lead-gen.",
+          "content": "For lead-generation landing pages the primary CTA may be a lead magnet. Keep the form to 2-3 fields (email + first name + company). Deliver instantly. The lead magnet must be genuinely useful to the audience.",
+          "rules": ["2-3 fields max", "Instant delivery", "Genuinely useful asset"],
+          "tags": ["lead-magnet", "lead-gen", "email-capture"]
+        }
+      ]
+    },
+    {
+      "id": "product-patterns",
+      "name": "Patterns by Product Type",
+      "description": "Different structures for different business models.",
+      "items": [
+        {
+          "id": "saas-landing",
+          "title": "SaaS landing",
+          "summary": "Free trial CTA, product screenshot/demo in hero, feature grid, testimonials, pricing, FAQ, final CTA.",
+          "content": "Show the product working as early as possible (screenshot, GIF or embedded demo) to reduce uncertainty. 'Start free trial' as primary CTA. Include social proof, a feature grid mapped to outcomes, testimonials with results, pricing, FAQ, final CTA.",
+          "rules": ["Product visual in hero", "Free trial CTA", "Testimonials with measurable results"],
+          "tags": ["saas", "landing", "free-trial"]
+        },
+        {
+          "id": "marketplace-landing",
+          "title": "Marketplace landing",
+          "summary": "Split CTA for buyers and sellers, category browsing, featured listings, and platform trust signals.",
+          "content": "Two audiences need two paths: 'Shop' and 'Start selling'. Show category tiles for browsing, featured items as proof of supply, and trust signals (payment protection, reviews, number of listings/transactions).",
+          "rules": ["Dual buyer/seller CTA", "Category tiles", "Supply + trust proof"],
+          "tags": ["marketplace", "landing", "two-sided"]
+        },
+        {
+          "id": "consulting-landing",
+          "title": "Consulting/service landing",
+          "summary": "Authority-led: results, case studies, credentials, process, testimonials, and a clear contact CTA.",
+          "content": "Services sell on authority and proof. Lead with a specific result promise, case studies with numbers, credentials and team, a clear 3-step process, testimonials, and a low-friction 'Book a call' CTA.",
+          "rules": ["Case studies with numbers", "Credentials visible", "Book-a-call CTA"],
+          "tags": ["consulting", "services", "authority"]
+        },
+        {
+          "id": "ai-product-landing",
+          "title": "AI product landing",
+          "summary": "Explain the outcome in plain language, show real output, address data privacy, offer a free trial/waitlist.",
+          "content": "Don't lead with 'AI-powered' - lead with what it does for the user. Show real, honest outputs (avoid overpromising). Privacy and data usage must be addressed early. Free trial to reduce risk; waitlist builds scarcity for high-demand products.",
+          "rules": ["Lead with outcome, not 'AI'", "Real output examples", "Privacy addressed early", "Free trial or waitlist"],
+          "tags": ["ai", "landing", "privacy"]
+        },
+        {
+          "id": "enterprise-landing",
+          "title": "Enterprise software landing",
+          "summary": "Security/compliance badges, integrations, ROI calculator or whitepaper, and a 'Talk to sales' path.",
+          "content": "Enterprise buyers need: security and compliance certifications, integration list, industry use cases, an ROI angle, and a human sales path. Include customer logos and proof points from similar-scale organizations.",
+          "rules": ["Security/compliance badges", "Integration catalog", "Sales contact path"],
+          "tags": ["enterprise", "b2b", "security"]
+        },
+        {
+          "id": "government-landing",
+          "title": "Government platform landing",
+          "summary": "Clarity-first: plain language, what users can do, how long it takes, eligibility, and help/accessibility links.",
+          "content": "Government users need to complete tasks with minimal friction. Use plain language, step-by-step guidance, clear eligibility, time estimates, and prominently placed help and accessibility support.",
+          "rules": ["Plain language throughout", "Eligibility + time estimates", "Help/accessibility prominent"],
+          "tags": ["government", "public-sector", "clarity"]
+        }
+      ]
+    }
+  ]
+}

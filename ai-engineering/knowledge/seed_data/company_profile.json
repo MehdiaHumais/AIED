@@ -1,0 +1,103 @@
+{
+  "id": "company_profile",
+  "name": "Company Profile",
+  "description": "Company identity, products, services, stats, and mission. The CEO agent reads this to introduce the company to clients. Edit this to change how the CEO presents the company.",
+  "icon": "Building2",
+  "accent": "blue",
+  "tags": ["company", "identity", "brand", "products", "services", "mission"],
+  "categories": [
+    {
+      "id": "identity",
+      "name": "Company Identity",
+      "description": "Basic company information, founding, and legal structure.",
+      "items": [
+        {
+          "id": "company-name",
+          "title": "Company Name & Parent",
+          "summary": "BritSync International is a subsidiary of NobleRoot Ltd.",
+          "content": "BritSync International is the AI engineering and digital marketing division of NobleRoot Ltd. NobleRoot Ltd. is a London-based AI startup founded in October 2023.",
+          "rules": [],
+          "tags": ["name", "parent", "founding"]
+        },
+        {
+          "id": "mission",
+          "title": "Mission & Vision",
+          "summary": "Harness AI to empower businesses and individuals.",
+          "content": "NobleRoot's mission is to become a billion-pound cash-reserved company within the next decade by establishing a diverse portfolio of global businesses. The vision involves developing advanced AI tools that enable clients to thrive and achieve meaningful growth. BritSync's mission: Empower businesses and talent through practical AI innovation.",
+          "rules": [],
+          "tags": ["mission", "vision", "goals"]
+        },
+        {
+          "id": "business-wings",
+          "title": "Business Wings",
+          "summary": "Three divisions: Noblesource, Britsync, Noblestudy.",
+          "content": "NobleRoot operates through three business wings:\n- Noblesource: Merchandising, garments industry, trading precious and normal gemstones\n- Britsync (our division): Social media management, marketing services, and AI engineering\n- Noblestudy: Student admissions to educational institutions in Bangladesh, UK, Europe, and USA",
+          "rules": [],
+          "tags": ["divisions", "wings", "business"]
+        }
+      ]
+    },
+    {
+      "id": "products-services",
+      "name": "Products & Services",
+      "description": "What we build and offer to clients.",
+      "items": [
+        {
+          "id": "products",
+          "title": "Our Products",
+          "summary": "LeadHunter, BritTrade, BritTube, BritSee.",
+          "content": "Products:\n- LeadHunter: Lead generation and email outreach automation\n- BritTrade: AI crypto trading bot\n- BritTube: AI long-form video generation\n- BritSee: Team AI chat with private memory layers (Launched May 2026)",
+          "rules": [],
+          "tags": ["products", "tools", "saas"]
+        },
+        {
+          "id": "services",
+          "title": "Our Services",
+          "summary": "Voice agents, agentic AI, marketing bots, content automation, ERP, custom apps.",
+          "content": "Services: Voice agents, agentic AI, marketing bots, content automation, ERP, custom apps.",
+          "rules": [],
+          "tags": ["services", "offerings"]
+        },
+        {
+          "id": "current-projects",
+          "title": "Current Projects",
+          "summary": "UK Gov cybersecurity, cardless ATM, Global AI Olympiad.",
+          "content": "Current projects:\n- UK Gov cyber security: military-grade firewall (3rd party vendor)\n- Cardless ATM authenticator for banking\n- Global AI Olympiad: worldwide AI talent and infrastructure initiative",
+          "rules": [],
+          "tags": ["projects", "government", "banking"]
+        }
+      ]
+    },
+    {
+      "id": "stats",
+      "name": "Company Stats",
+      "description": "Financials, workforce, and growth metrics.",
+      "items": [
+        {
+          "id": "financials",
+          "title": "Financial Projections",
+          "summary": "Y2 target: 150K GBP, Q1 secured: 18K GBP.",
+          "content": "Financial projections for next 6 months:\n- Target revenue: 150,000 GBP\n- Expected net profit: 136,000 GBP\n- Key expenses: 7,000 GBP salaries/subscriptions, 7,000 GBP AI tool development\n- Initial investment: 750 GBP, Fixed assets: 320 GBP, No liabilities or loans",
+          "rules": [],
+          "tags": ["financials", "revenue", "profit"]
+        },
+        {
+          "id": "workforce",
+          "title": "Workforce & Expansion",
+          "summary": "5 employees, 3 directors, 3 advisors, 38 robots. Expanding to Dubai, Belgium, Luxembourg, USA.",
+          "content": "Workforce: 5 current employees, 3 lifetime directors, 3 external advisors, and 38 AI robots.\n6 intern batches completed, 7th running.\nExpanding to Dubai, Belgium, Luxembourg, and USA.\nPlan to reduce robot usage by 50%.",
+          "rules": [],
+          "tags": ["team", "expansion", "robots"]
+        },
+        {
+          "id": "csr",
+          "title": "Corporate Social Responsibility",
+          "summary": "Training Bangladeshi students, environmental sustainability.",
+          "content": "NobleRoot is committed to corporate social responsibility, offering training and courses to Bangladeshi students and young entrepreneurs, and focusing on environmental sustainability by minimizing its carbon footprint.",
+          "rules": [],
+          "tags": ["csr", "sustainability", "training"]
+        }
+      ]
+    }
+  ]
+}

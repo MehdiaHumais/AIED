@@ -1,0 +1,143 @@
+{
+  "id": "ux_standards",
+  "name": "UX Standards",
+  "description": "Company-wide interaction and experience rules. These numeric limits keep products effortless: fewer steps, less friction, no dead ends.",
+  "icon": "MousePointerClick",
+  "accent": "violet",
+  "tags": ["ux", "usability", "flows", "onboarding", "interaction"],
+  "categories": [
+    {
+      "id": "flow-limits",
+      "name": "Flow Limits",
+      "description": "Hard caps on steps and effort. Every flow is measured against these numbers.",
+      "items": [
+        {
+          "id": "max-onboarding-steps",
+          "title": "Maximum onboarding steps",
+          "summary": "Onboarding must complete in 4 steps or fewer, or offer 'skip' from step 2.",
+          "content": "Forced onboarding destroys activation. Maximum 4 screens of onboarding; from step 2 a 'Skip for now' option must exist. Any onboarding longer than 4 steps must be split into a first-run micro-flow plus progressive discovery in-product.",
+          "rules": ["<=4 onboarding steps", "'Skip' visible from step 2", "Longer flows split into progressive discovery"],
+          "tags": ["onboarding", "steps", "activation"]
+        },
+        {
+          "id": "clicks-to-buy",
+          "title": "Maximum clicks to buy",
+          "summary": "A customer should reach 'Buy Now' and complete checkout in 3 clicks or fewer after deciding.",
+          "content": "Reduce the purchase path ruthlessly: view product -> buy -> paid. Checkout should collect nothing it doesn't need (guest checkout first, account optional). Any flow longer than 3 steps after the decision point will measurably drop conversion.",
+          "rules": ["Decision -> purchase in <=3 steps", "Guest checkout offered first", "Account creation optional at checkout"],
+          "tags": ["buy", "checkout", "commerce"]
+        },
+        {
+          "id": "clicks-to-create",
+          "title": "Maximum clicks to create a project",
+          "summary": "Creating a new project / record must take 2 clicks and at most 3 fields before 'Create'.",
+          "content": "Primary creation flows are one modal with essential fields only (name + optional description). Advanced settings live in an 'Advanced' toggle or post-creation settings. Never block creation behind optional configuration.",
+          "rules": ["<=2 clicks to create", "<=3 essential fields", "Advanced options behind a toggle"],
+          "tags": ["creation", "friction", "workflow"]
+        },
+        {
+          "id": "min-font-size",
+          "title": "Minimum font size",
+          "summary": "12px absolute minimum for any UI text; 14px minimum for body and any text people must read.",
+          "content": "Never ship text below 12px. Body copy 14-16px. Labels and metadata 12-13px is acceptable but never primary content. If a screen needs many tiny labels, the information architecture is wrong, not the font size.",
+          "rules": ["Never below 12px", "Body minimum 14px"],
+          "tags": ["typography", "readability"]
+        },
+        {
+          "id": "max-form-length",
+          "title": "Maximum form length",
+          "summary": "8 fields max before the submit button is visible. Longer forms use progressive disclosure or multi-step.",
+          "content": "Forms are a leading cause of abandonment. If a single form needs more than 8 fields, split into logical steps with progress indication, or progressively reveal conditional fields. Never show a form where the submit action requires scrolling past 8+ fields.",
+          "rules": ["<=8 fields per form", "Split long forms into steps", "Conditional fields revealed progressively"],
+          "tags": ["form", "friction"]
+        }
+      ]
+    },
+    {
+      "id": "interaction-principles",
+      "name": "Interaction Principles",
+      "description": "How systems should behave to feel predictable and safe.",
+      "items": [
+        {
+          "id": "progressive-disclosure",
+          "title": "Progressive disclosure",
+          "summary": "Show the essential by default; reveal advanced/complex options only when needed.",
+          "content": "Defaults must make the happy path possible without reading anything. Advanced settings, filters, and power-user features are progressively revealed (expandable sections, 'Advanced' tabs, or context menus). This reduces cognitive load while preserving power.",
+          "rules": ["Happy path works with default options", "Advanced options behind progressive disclosure"],
+          "tags": ["progressive-disclosure", "complexity"]
+        },
+        {
+          "id": "confirmation-dialogs",
+          "title": "Confirmation dialogs",
+          "summary": "Confirm only destructive or irreversible actions. Never confirm routine actions.",
+          "content": "Confirmations are a tax on every user. Charge it only when the action is destructive (delete, overwrite) or irreversible (final submit, publish). Routine actions (save, add, send that can be edited) get undo instead of confirmation. The confirm button must name the action, not just say 'OK'.",
+          "rules": ["Confirm destructive/irreversible only", "Never confirm routine actions", "Confirm button names the action"],
+          "tags": ["confirmation", "safety"]
+        },
+        {
+          "id": "undo-strategy",
+          "title": "Undo strategy",
+          "summary": "Prefer undo over confirmations. Every destructive action that can be undone, should be.",
+          "content": "Provide Undo for edits, deletes with soft-delete, and sends with delay windows where feasible. Undo appears as a toast with a 5-8 second window. When undo is impossible, use a confirmation with the action named explicitly.",
+          "rules": ["Soft-delete + undo where feasible", "Undo toast window 5-8s", "Confirm only when undo impossible"],
+          "tags": ["undo", "error-prevention"]
+        },
+        {
+          "id": "navigation-principles",
+          "title": "Navigation principles",
+          "summary": "Users should always know where they are, where they can go, and how to go back. Max 3 levels deep.",
+          "content": "Every screen has a clear place in the hierarchy (breadcrumbs or highlighted nav item). Back always works (browser back included). Avoid deep hierarchies beyond 3 levels - flatten with tabs or search. Key actions are reachable within 2 clicks of the home view.",
+          "rules": ["Location always visible", "Max 3 levels of hierarchy", "Key actions within 2 clicks"],
+          "tags": ["navigation", "information-architecture"]
+        },
+        {
+          "id": "mobile-rules",
+          "title": "Mobile rules",
+          "summary": "Thumb-zone primary actions, 48px touch targets, no hover-only interactions, single column.",
+          "content": "On mobile the primary action sits in the thumb zone (bottom third). All touch targets at least 48x48px. Nothing may be hover-only - provide tap alternatives. Content is single column. Sticky bottom bars replace sidebars for key actions.",
+          "rules": ["Primary action in thumb zone", "Touch targets >=48px", "No hover-only interactions", "Single column"],
+          "tags": ["mobile", "touch", "responsive"]
+        }
+      ]
+    },
+    {
+      "id": "effort-reduction",
+      "name": "Effort Reduction",
+      "description": "Make the common task take the least possible effort.",
+      "items": [
+        {
+          "id": "smart-defaults",
+          "title": "Smart defaults & prefills",
+          "summary": "Pre-select the most likely choice, prefill known data, let the happy path be zero-thought.",
+          "content": "Every form should default to the statistically most common option. Reuse known data (company, contact, address) instead of asking again. The user should be able to complete the primary flow by clicking the primary action repeatedly without changing any default.",
+          "rules": ["Pre-select most likely option", "Pre-fill known data", "Happy path = zero configuration"],
+          "tags": ["defaults", "effort"]
+        },
+        {
+          "id": "search-before-nav",
+          "title": "Search as first-class navigation",
+          "summary": "For products with >10 core screens, offer global search (command palette) reachable with one keystroke.",
+          "content": "Power users navigate by searching. Global search must index screens, records, and actions. One shortcut opens it (e.g., Ctrl/Cmd+K), typing filters instantly, arrows navigate, Enter executes. This is the single biggest power-user efficiency win.",
+          "rules": ["Global search when >10 screens", "One-keystroke access", "Index screens + records + actions"],
+          "tags": ["search", "command-palette", "efficiency"]
+        },
+        {
+          "id": "bulk-actions",
+          "title": "Bulk actions",
+          "summary": "Any action that applies to one record must apply to many via multi-select.",
+          "content": "Wherever single-record actions exist (delete, archive, export, status change), multi-select with the same action must follow. Show a selection toolbar when items are selected with a count and 'Select all'.",
+          "rules": ["Multi-select where single actions exist", "Selection toolbar with count", "Select all supported"],
+          "tags": ["bulk", "efficiency"]
+        },
+        {
+          "id": "remember-state",
+          "title": "Remember user state",
+          "summary": "Remember filters, sort, page, scroll position and drafts between visits.",
+          "content": "Users hate redoing work. Persist list state (filters, sort, pagination), tab position, and any in-progress form drafts. Auto-save long-form content with visible 'Saved' feedback.",
+          "rules": ["Persist filters/sort/pagination", "Persist tabs & scroll", "Auto-save long forms"],
+          "tags": ["state", "persistence", "drafts"]
+        }
+      ]
+    }
+  ]
+}

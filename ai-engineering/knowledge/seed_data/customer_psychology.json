@@ -1,0 +1,159 @@
+{
+  "id": "customer_psychology",
+  "name": "Customer Psychology Library",
+  "description": "How humans make decisions, applied to product and marketing. Every growth recommendation must trace back to one of these principles.",
+  "icon": "Brain",
+  "accent": "fuchsia",
+  "tags": ["psychology", "behavior", "persuasion", "trust", "decision-making"],
+  "categories": [
+    {
+      "id": "persuasion-principles",
+      "name": "Persuasion Principles",
+      "description": "The classic principles of influence.",
+      "items": [
+        {
+          "id": "trust",
+          "title": "Trust",
+          "summary": "Trust is earned with specifics, consistency, and proof - never with claims alone.",
+          "content": "Trust is the foundation of every transaction. Build it with specific numbers, verifiable proof, transparent pricing, security badges, and consistent behavior over time. Trust collapses instantly with hidden fees or bait-and-switch.",
+          "rules": ["Use specific verifiable proof", "Transparent pricing", "Consistency over time"],
+          "tags": ["trust", "credibility"]
+        },
+        {
+          "id": "authority",
+          "title": "Authority",
+          "summary": "Domain expertise, credentials, and 'used by X' statements increase compliance.",
+          "content": "People defer to experts. Show credentials, certifications, awards, published research, or 'trusted by industry leaders'. Authority works best when it is relevant to the decision being made.",
+          "rules": ["Show relevant credentials", "'Used by' + recognizable names", "Keep authority relevant to the decision"],
+          "tags": ["authority", "credibility"]
+        },
+        {
+          "id": "urgency",
+          "title": "Urgency",
+          "summary": "Real, time-limited urgency increases conversion; fake urgency destroys trust.",
+          "content": "Limited-time offers and countdowns work only when the deadline is genuine. Combine urgency with a clear reason ('pricing changes at the end of the month'). Artificial scarcity backfires when customers realize it.",
+          "rules": ["Deadlines must be real", "Give a reason for urgency", "Never fake scarcity"],
+          "tags": ["urgency", "scarcity"]
+        },
+        {
+          "id": "loss-aversion",
+          "title": "Loss aversion",
+          "summary": "Losing is twice as motivating as gaining. Frame the cost of inaction.",
+          "content": "People work harder to avoid losing than to gain. Frame CTAs around what they lose by not acting ('Don't lose another deal to slow follow-up'). In products, trials that hold data or progress create switching costs.",
+          "rules": ["Frame cost of inaction", "Loss framing beats gain framing ~2x", "Use in headlines and CTAs"],
+          "tags": ["loss-aversion", "framing"]
+        },
+        {
+          "id": "social-proof",
+          "title": "Social proof",
+          "summary": "People copy others. Show users, ratings, testimonials, and 'as seen in'.",
+          "content": "The more uncertain the buyer, the more they rely on others. Use counts of users, star ratings, testimonials with results, logos, and press mentions. Proof must be specific and recent to stay credible.",
+          "rules": ["Specific counts, not vague", "Testimonials with results", "Recent proof"],
+          "tags": ["social-proof", "testimonials"]
+        },
+        {
+          "id": "reciprocity",
+          "title": "Reciprocity",
+          "summary": "Give first (free tools, content, trials) and people feel compelled to give back.",
+          "content": "Providing genuine value before asking for anything creates obligation. Free tools, templates, audits, and generous trials all trigger reciprocity. The gift must be valuable and unconditional to work.",
+          "rules": ["Give real value unconditionally", "Free tools/templates/audits", "Give before asking"],
+          "tags": ["reciprocity", "give-first"]
+        },
+        {
+          "id": "commitment",
+          "title": "Commitment & consistency",
+          "summary": "Small yeses lead to bigger yeses. Start with a micro-commitment.",
+          "content": "Once someone commits publicly or takes a small step, they're more likely to continue. Onboarding that starts with 'free, 30 seconds' and grows commitments progressively keeps users engaged and reduces churn.",
+          "rules": ["Start with micro-commitments", "Progressively bigger asks", "Make commitments visible"],
+          "tags": ["commitment", "consistency", "onboarding"]
+        }
+      ]
+    },
+    {
+      "id": "cognitive-psychology",
+      "name": "Cognitive Psychology",
+      "description": "How attention and effort shape decisions.",
+      "items": [
+        {
+          "id": "cognitive-load",
+          "title": "Cognitive load",
+          "summary": "Every extra element competes for attention. Remove, consolidate, and simplify.",
+          "content": "Reducing cognitive load increases conversion and comprehension. Remove unnecessary choices, group related information, use defaults, and rely on familiar patterns. When two layouts are equal in function, choose the simpler.",
+          "rules": ["Remove unnecessary elements", "Group related info", "Prefer familiar patterns"],
+          "tags": ["cognitive-load", "simplicity"]
+        },
+        {
+          "id": "decision-fatigue",
+          "title": "Decision fatigue",
+          "summary": "Too many choices exhaust users and lower the quality of decisions.",
+          "content": "Each decision costs energy. Limit options (3 pricing tiers not 7), use smart defaults, and stagger decisions across sessions. Order decisions so the least important come first and the most consequential come when energy is highest.",
+          "rules": ["Limit options (3 tiers not 7)", "Use smart defaults", "Order decisions by importance"],
+          "tags": ["decision-fatigue", "choice"]
+        },
+        {
+          "id": "color-psychology",
+          "title": "Color psychology",
+          "summary": "Color sets mood and signals action. High-contrast accent for CTAs; consistency matters more than the specific hue.",
+          "content": "Color meaning varies by culture and context, so consistency and contrast matter more than a 'magic' color. The CTA must contrast against everything else on the page. Use color to encode status (red=error, green=success) consistently.",
+          "rules": ["CTA contrasts with page", "Consistent status colors", "Don't rely on a single 'magic' hue"],
+          "tags": ["color", "psychology", "cta"]
+        },
+        {
+          "id": "reading-patterns",
+          "title": "Reading patterns",
+          "summary": "Users scan in F or Z patterns. Put the key message and CTA in the scan path.",
+          "content": "Most users scan rather than read. Put the headline, key benefit, and CTA where scanning eyes land (top-left first). Use short paragraphs, subheadings, and visual anchors so scanners still get the message.",
+          "rules": ["Key message in scan path", "Short paragraphs + subheadings", "Visual anchors for scanners"],
+          "tags": ["reading-patterns", "layout", "eyetracking"]
+        },
+        {
+          "id": "microcopy",
+          "title": "Microcopy",
+          "summary": "Small text with big impact: button labels, error messages, and helper text shape trust and reduce friction.",
+          "content": "Microcopy is where products feel human. Specific error messages with a fix outperform 'Invalid input'. Button labels describe outcomes. Helper text prevents mistakes before they happen. Every sentence supports the user's goal.",
+          "rules": ["Actionable error messages", "Outcome-oriented button labels", "Helper text prevents errors"],
+          "tags": ["microcopy", "copy", "trust"]
+        },
+        {
+          "id": "anchoring",
+          "title": "Anchoring & price framing",
+          "summary": "Show the higher-tier or original price first so the presented price feels fair.",
+          "content": "People judge prices relative to context. Displaying a higher anchor (premium tier or strikethrough original price) makes the target price feel reasonable. Compare against known alternatives ('less than a coffee a day').",
+          "rules": ["Present an anchor price first", "Strikethrough for discounts", "Frame against familiar costs"],
+          "tags": ["anchoring", "pricing", "psychology"]
+        }
+      ]
+    },
+    {
+      "id": "retention-psychology",
+      "name": "Retention & Habit",
+      "description": "Turn one-time users into habits.",
+      "items": [
+        {
+          "id": "habit-loops",
+          "title": "Habit loops (cue -> action -> reward)",
+          "summary": "Design a repeatable cycle: a cue triggers an action that produces an immediate reward.",
+          "content": "Products that form habits engineer a loop: cue (notification, reminder), action (the core task), reward (visible outcome, progress). Build the loop into the product's core job, not as a gimmick.",
+          "rules": ["Identify cue/action/reward", "Reward must be immediate", "Loop tied to core job"],
+          "tags": ["habit", "retention", "engagement"]
+        },
+        {
+          "id": "progress-effects",
+          "title": "Progress & goal gradient",
+          "summary": "Visible progress toward a goal increases completion. Show completion and next step.",
+          "content": "People finish what they've started when progress is visible. Completion bars, streaks, milestones, and 'you're 80% done' messaging lift completion rates. Keep the next step always visible.",
+          "rules": ["Show completion progress", "Streaks/milestones where relevant", "Next step always visible"],
+          "tags": ["progress", "goal-gradient", "gamification"]
+        },
+        {
+          "id": "endowment-effect",
+          "title": "Endowment effect",
+          "summary": "People overvalue what they already have - data and setup create switching costs.",
+          "content": "The more a user puts into a product (data, customization, history), the less likely they are to leave. Build value accumulation early: import data, personalize, and celebrate stored value.",
+          "rules": ["Accumulate user value early", "Highlight stored value", "Data import reduces churn"],
+          "tags": ["endowment", "switching-costs", "retention"]
+        }
+      ]
+    }
+  ]
+}

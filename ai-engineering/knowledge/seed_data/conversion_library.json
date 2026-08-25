@@ -1,0 +1,142 @@
+{
+  "id": "conversion_library",
+  "name": "Conversion Library",
+  "description": "Proven conversion patterns for acquisition and revenue. Every landing page and purchase flow is measured against these.",
+  "icon": "TrendingUp",
+  "accent": "green",
+  "tags": ["conversion", "growth", "acquisition", "revenue", "cta", "checkout"],
+  "categories": [
+    {
+      "id": "cta-placement",
+      "name": "CTA Placement",
+      "description": "Where action buttons must live.",
+      "items": [
+        {
+          "id": "cta-placement-rules",
+          "title": "CTA placement rules",
+          "summary": "Primary CTA above the fold, repeated at scroll end and mid-page, sticky on long pages, and visible without scrolling on mobile.",
+          "content": "The primary CTA appears above the fold, and is repeated after key persuasion blocks (social proof, benefits, testimonials) and at the end. On long sales pages use a sticky CTA bar. Mobile CTAs sit in the thumb zone (bottom).",
+          "rules": ["Primary CTA above the fold", "Repeat after each proof block + end", "Sticky CTA on long pages", "Thumb zone on mobile"],
+          "tags": ["cta", "placement", "conversion"]
+        },
+        {
+          "id": "sticky-cta",
+          "title": "Sticky CTA",
+          "summary": "Persistent CTA bar that remains visible while scrolling; appears after the hero scrolls away.",
+          "content": "Sticky CTAs catch the buyer who is about to bounce. Trigger after the visitor scrolls past the hero. Keep it minimal (price + button). Hide when the footer's final CTA is in view.",
+          "rules": ["Appear after hero scroll", "Price + button only", "Hide near final CTA"],
+          "tags": ["sticky-cta", "conversion"]
+        },
+        {
+          "id": "buy-now-placement",
+          "title": "Buy Now button placement",
+          "summary": "On product pages the Buy Now button sits above the fold, to the right of the product image, under the price, repeated below the fold and in a sticky mobile bar.",
+          "content": "Buy Now must be visible without scrolling on the product page - right of the main image, below the price. Repeat near the bottom after the description/specs. On mobile, a fixed bottom bar with the price and Buy Now converts best. The Buy Now button uses a shopping-bag icon + explicit label and the strongest visual contrast on the page.",
+          "rules": ["Buy Now above the fold next to image", "Repeat below fold + mobile sticky bar", "Strongest visual contrast on page", "Shopping-bag icon + 'Buy Now' label"],
+          "tags": ["buy-now", "commerce", "placement"]
+        }
+      ]
+    },
+    {
+      "id": "offer-strategies",
+      "name": "Offer Strategies",
+      "description": "Trials, guarantees and pricing mechanics.",
+      "items": [
+        {
+          "id": "free-trial",
+          "title": "Free trial best practices",
+          "summary": "Time-limited trials (7-14 days) with no credit card outperform unlimited free tiers for conversion to paid when the product shows value fast.",
+          "content": "Use trials when value is visible within days. Requiring a card at trial start increases commitment but lowers trial starts - test. Send trial-lifecycle emails (day 1 activation, day 3 tips, day 7 value recap, day 13 upgrade). Auto-downgrade at end.",
+          "rules": ["7-14 day trial window", "Trial lifecycle emails", "Auto-downgrade at expiry"],
+          "tags": ["free-trial", "conversion", "saas"]
+        },
+        {
+          "id": "pricing-psychology",
+          "title": "Pricing display",
+          "summary": "Show monthly price, annual savings toggle, per-seat clarity, and a highlighted popular tier.",
+          "content": "Price is visible and unambiguous. Annual toggle pre-selected to annual when it's the better deal for the company. 'Most popular' badge on the middle tier. Never show confusing math - one clear price.",
+          "rules": ["One clear monthly price", "Annual toggle with savings", "Highlight middle tier", "Per-seat pricing explicit"],
+          "tags": ["pricing", "tiers", "display"]
+        },
+        {
+          "id": "guarantee-strategies",
+          "title": "Guarantee strategies",
+          "summary": "A strong guarantee ('30-day money back') lifts conversion more than it costs; put it next to the CTA.",
+          "content": "Guarantees reduce perceived risk, the #1 purchase barrier. Make them specific and unconditional. Money-back guarantees lift conversion measurably and redemption rates are low. Place the guarantee beside the CTA and at checkout.",
+          "rules": ["Specific + unconditional", "Guarantee beside CTA + checkout", "Low redemption keeps cost negligible"],
+          "tags": ["guarantee", "risk-reversal"]
+        },
+        {
+          "id": "lead-magnet-strategy",
+          "title": "Lead magnets & gated assets",
+          "summary": "Gate high-value content (templates, benchmarks, calculators) behind a 2-3 field form for B2B email capture.",
+          "content": "Lead magnets convert cold traffic into contacts. Best formats: templates, ROI calculators, benchmark reports, checklists. Form is 2-3 fields. Deliver instantly via email + redirect. Nurture with a short automated sequence.",
+          "rules": ["High-value asset", "2-3 field form", "Instant delivery + nurture sequence"],
+          "tags": ["lead-magnet", "b2b", "email"]
+        },
+        {
+          "id": "upsell-crosssell",
+          "title": "Upsell & cross-sell",
+          "summary": "Offer the next tier or related product after the main purchase decision, not before.",
+          "content": "Post-purchase upsells and cross-sells convert because the decision barrier is already crossed. Show upgrades on the confirmation page and in-app. Never upsell before checkout - it distracts from the primary decision.",
+          "rules": ["Upsell after purchase decision", "Confirmation page + in-app offers", "Never before checkout"],
+          "tags": ["upsell", "cross-sell", "revenue"]
+        }
+      ]
+    },
+    {
+      "id": "form-checkout",
+      "name": "Forms & Checkout",
+      "description": "Removing friction at the moment of truth.",
+      "items": [
+        {
+          "id": "checkout-friction",
+          "title": "Checkout friction reduction",
+          "summary": "Guest checkout first, auto-fill, no account requirement, express payment, and a progress bar for multi-page checkouts.",
+          "content": "Every field costs money. Use guest checkout by default, save shipping/billing info, support express wallets, and show order summary throughout. Offer email-only account creation after purchase, not before.",
+          "rules": ["Guest checkout default", "Express payment options", "Order summary always visible", "Account after purchase"],
+          "tags": ["checkout", "friction", "conversion"]
+        },
+        {
+          "id": "form-conversion",
+          "title": "Form conversion rules",
+          "summary": "Minimize fields, label above field, inline validation, and a strong submit button with a benefit label.",
+          "content": "Every extra field drops completion ~5-15%. Ask only what you need now. Validate inline. The submit button states the benefit ('Get my free report'). Place the button where visible without scrolling.",
+          "rules": ["Minimum fields", "Inline validation", "Benefit-labeled submit button"],
+          "tags": ["form", "conversion", "fields"]
+        },
+        {
+          "id": "booking-page",
+          "title": "Booking / contact pages",
+          "summary": "Show availability, time estimates, and next steps. Offer scheduling links over back-and-forth emails.",
+          "content": "For services, a booking link (show real availability, auto-confirm, reminders) beats email back-and-forth. Contact forms state response time. Both work best with a specific offer and urgency ('Limited slots this month').",
+          "rules": ["Real availability + auto-confirm", "State response time", "Offer framing with scarcity"],
+          "tags": ["booking", "contact", "services"]
+        }
+      ]
+    },
+    {
+      "id": "analytics",
+      "name": "Conversion Analytics",
+      "description": "How to measure and find leaks.",
+      "items": [
+        {
+          "id": "funnel-metrics",
+          "title": "Funnel metrics to track",
+          "summary": "Traffic -> signup -> activation -> paid -> retained. Track each conversion rate; fix the biggest drop-off first.",
+          "content": "Map the full funnel and measure each step: visit-to-signup, signup-to-activated, activated-to-paid, and 30/90-day retention. The biggest drop-off is your priority. Compare rates across channels to find the best acquisition source.",
+          "rules": ["Track all funnel stages", "Fix biggest drop-off first", "Compare by channel"],
+          "tags": ["analytics", "funnel", "metrics"]
+        },
+        {
+          "id": "a-b-testing",
+          "title": "A/B testing",
+          "summary": "Test one variable at a time (headline, CTA, price framing, section order) with sufficient sample before concluding.",
+          "content": "Isolate one variable per test. Reach statistical significance before shipping. Document every test and its result - the learning is the asset. Prioritize tests on the pages with the most traffic and revenue impact.",
+          "rules": ["One variable per test", "Statistical significance required", "Document every result"],
+          "tags": ["a-b-testing", "experimentation"]
+        }
+      ]
+    }
+  ]
+}

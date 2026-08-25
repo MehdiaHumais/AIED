@@ -1,0 +1,142 @@
+{
+  "id": "accessibility_standards",
+  "name": "Accessibility Standards",
+  "description": "Modern accessibility requirements (WCAG AA baseline). Every product must meet these before release - this is checked at review, not optional.",
+  "icon": "Accessibility",
+  "accent": "lime",
+  "tags": ["a11y", "wcag", "accessibility", "inclusive", "keyboard", "screen-reader"],
+  "categories": [
+    {
+      "id": "visual",
+      "name": "Visual Accessibility",
+      "description": "Contrast, focus and responsive layout.",
+      "items": [
+        {
+          "id": "contrast-ratio",
+          "title": "Contrast ratios (WCAG AA)",
+          "summary": "Text 4.5:1 (3:1 for large text), UI components and icons 3:1. Verify in light and dark mode.",
+          "content": "Normal text must be 4.5:1, large text (>=18pt or >=14pt bold) 3:1, and meaningful UI components/input borders/graphical objects 3:1 against adjacent colors. Use automated tools plus manual review, and check both themes.",
+          "rules": ["Text 4.5:1, large text 3:1", "UI components 3:1", "Check light + dark mode"],
+          "tags": ["contrast", "wcag", "visual"]
+        },
+        {
+          "id": "focus-visible",
+          "title": "Visible focus indicators",
+          "summary": "Every interactive element shows a clearly visible focus ring when navigated by keyboard.",
+          "content": "Never remove focus outlines without a replacement. A 2px focus ring with contrast against the page is standard. Focus states must be visible in both light and dark mode and on all interactive elements (links, buttons, inputs, menu items).",
+          "rules": ["Focus ring on all interactive elements", "Never remove outlines without replacement", "Visible in both themes"],
+          "tags": ["focus", "keyboard", "visual"]
+        },
+        {
+          "id": "responsive-layout",
+          "title": "Responsive & reflow",
+          "summary": "No horizontal scrolling at 320px width; content reflows at 400% zoom without loss of function.",
+          "content": "Content must reflow when zoomed to 400% and at 320px wide viewports. No content or functionality may be lost. Avoid fixed-width containers. Text can reflow without overlapping.",
+          "rules": ["No horizontal scroll at 320px", "Functional at 400% zoom", "No fixed-width layouts"],
+          "tags": ["responsive", "reflow", "zoom"]
+        },
+        {
+          "id": "touch-targets",
+          "title": "Touch target sizes",
+          "summary": "Interactive elements minimum 44x44px (24x24 with sufficient spacing for desktop).",
+          "content": "Touch targets should be at least 44x44px on touch devices; 24x24px minimum with adequate spacing is acceptable on mouse-driven desktop. Targets must not overlap and error zones must be generous.",
+          "rules": ["44x44 touch targets", "24x24 minimum with spacing", "No overlapping targets"],
+          "tags": ["touch", "target-size", "mobile"]
+        }
+      ]
+    },
+    {
+      "id": "keyboard",
+      "name": "Keyboard Accessibility",
+      "description": "No mouse required to operate anything.",
+      "items": [
+        {
+          "id": "keyboard-nav",
+          "title": "Full keyboard operability",
+          "summary": "Every feature reachable and operable with keyboard alone: Tab, Enter, Space, Esc, arrows.",
+          "content": "All functionality must be keyboard operable: navigation, forms, dialogs, menus, drag-and-drop (with keyboard alternative), and custom components. Tab order follows visual order. No keyboard traps.",
+          "rules": ["All features keyboard-operable", "Logical tab order", "No keyboard traps", "Keyboard alt for drag-drop"],
+          "tags": ["keyboard", "navigation"]
+        },
+        {
+          "id": "skip-links",
+          "title": "Skip links",
+          "summary": "A 'Skip to main content' link is the first focusable element on every page.",
+          "content": "Provide a skip link as the first tab stop that jumps past repetitive navigation to the main content. Visible on focus (not hidden permanently). Also consider skip links to key sections on complex pages.",
+          "rules": ["Skip link first tab stop", "Visible on focus"],
+          "tags": ["skip-link", "keyboard"]
+        },
+        {
+          "id": "dialog-keyboard",
+          "title": "Dialog keyboard behavior",
+          "summary": "Focus moves into dialog, traps inside, ESC closes, focus returns to trigger.",
+          "content": "When a dialog opens, focus moves to it. Tab cycles within the dialog (focus trap). ESC closes. On close, focus returns to the element that opened it. Focus restoration is required for screen reader and keyboard users.",
+          "rules": ["Focus trap inside dialog", "ESC closes", "Focus returns to trigger"],
+          "tags": ["dialog", "keyboard", "focus"]
+        }
+      ]
+    },
+    {
+      "id": "screen-reader",
+      "name": "Screen Readers & ARIA",
+      "description": "Non-visual access.",
+      "items": [
+        {
+          "id": "semantic-html",
+          "title": "Semantic HTML first",
+          "summary": "Use native elements (button, nav, main, h1-h6, table) before ARIA; ARIA only when HTML can't express it.",
+          "content": "Native HTML semantics are free accessibility. Prefer real buttons over divs with click handlers, real links over buttons-as-links, and proper heading hierarchy (one h1 per page, no skipped levels).",
+          "rules": ["Native elements before ARIA", "One h1 per page", "No skipped heading levels"],
+          "tags": ["semantics", "html", "aria"]
+        },
+        {
+          "id": "aria-patterns",
+          "title": "ARIA usage rules",
+          "summary": "Add aria-label to icon-only buttons, aria-live for dynamic updates, role/aria-expanded for custom widgets.",
+          "content": "Icon-only buttons need aria-label. Dynamic content changes announce via aria-live (polite). Custom widgets use appropriate roles (dialog, menu, tablist) with aria-expanded/aria-selected states. Don't use ARIA when a native element exists.",
+          "rules": ["aria-label on icon-only controls", "aria-live for dynamic content", "Correct roles for custom widgets"],
+          "tags": ["aria", "screen-reader"]
+        },
+        {
+          "id": "form-announcements",
+          "title": "Form errors for screen readers",
+          "summary": "Errors are associated with fields (aria-describedby), announced on submit, and focus moves to the first error.",
+          "content": "Link each error to its field with aria-describedby and aria-invalid. Announce the error summary on submit. Move focus to the first invalid field. Never rely on color alone to signal errors.",
+          "rules": ["aria-describedby on error fields", "Announce summary + focus first error", "Never color-only errors"],
+          "tags": ["forms", "errors", "aria"]
+        },
+        {
+          "id": "alt-captions",
+          "title": "Alt text & captions",
+          "summary": "Decorative images get empty alt; informative images get descriptive alt; video gets captions and transcripts.",
+          "content": "Informative images: concise descriptive alt text. Decorative images: alt='' so screen readers skip them. Media: provide captions, transcripts, and audio descriptions where relevant. Don't duplicate surrounding text verbatim in alt.",
+          "rules": ["Descriptive alt for informative images", "Empty alt for decorative", "Captions + transcripts for media"],
+          "tags": ["alt-text", "captions", "media"]
+        }
+      ]
+    },
+    {
+      "id": "reduced-motion",
+      "name": "Motion & Input",
+      "description": "Respect user preferences.",
+      "items": [
+        {
+          "id": "reduced-motion",
+          "title": "Reduced motion",
+          "summary": "Respect prefers-reduced-motion: disable or reduce animation, keep essential transitions instantaneous.",
+          "content": "Support prefers-reduced-motion. When set, remove or minimize non-essential animation (parallax, large movements, auto-playing). Essential state changes remain but instant. Never make content depend on an animation completing.",
+          "rules": ["Respect prefers-reduced-motion", "Non-essential animation disabled", "Content not dependent on animation"],
+          "tags": ["motion", "animation", "vestibular"]
+        },
+        {
+          "id": "input-methods",
+          "title": "Input method flexibility",
+          "summary": "Support mouse, keyboard, touch, and voice. Timeouts don't auto-logout without warning.",
+          "content": "Interactions must not assume one input method. Provide generous session timeouts with warning before expiry. Autocomplete where it helps (addresses, names). Never time out mid-task without preserving state.",
+          "rules": ["All input methods supported", "Session warning before timeout", "Preserve state on timeout"],
+          "tags": ["input", "timeout", "autocomplete"]
+        }
+      ]
+    }
+  ]
+}

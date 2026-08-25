@@ -1,0 +1,263 @@
+{
+  "id": "saas_best_practices",
+  "name": "SaaS Best Practices",
+  "description": "Proven product patterns by industry vertical. When building a CRM, accounting, HR or marketplace product, consult the matching category for the patterns users already expect.",
+  "icon": "Building2",
+  "accent": "blue",
+  "tags": ["saas", "vertical", "best-practices", "patterns", "industry"],
+  "categories": [
+    {
+      "id": "crm",
+      "name": "CRM",
+      "description": "What every CRM user expects.",
+      "items": [
+        {
+          "id": "crm-core",
+          "title": "CRM core model",
+          "summary": "Leads -> Contacts -> Accounts -> Deals -> Activities, with a pipeline view and activity timeline per record.",
+          "content": "The mental model is a pipeline. Every record (contact/account/deal) carries an activity timeline. Pipeline stages are fully configurable. Every interaction auto-logs or one-click logs.",
+          "rules": ["Pipeline view with drag between stages", "Activity timeline on every record", "Configurable stages", "1-click logging of calls/emails"],
+          "tags": ["crm", "pipeline", "sales"]
+        },
+        {
+          "id": "crm-dashboard",
+          "title": "CRM dashboard",
+          "summary": "Funnel, win rate, revenue forecast, and activity feed as default widgets.",
+          "content": "Default dashboards show: funnel by stage, win rate, forecast revenue, upcoming tasks, and a team activity feed. Salespeople open the app for 'what do I do next today' - prioritize task/next-step lists.",
+          "rules": ["Funnel + win rate widgets", "Today's task list prominent", "Forecast visible to management"],
+          "tags": ["crm", "dashboard", "sales"]
+        }
+      ]
+    },
+    {
+      "id": "accounting",
+      "name": "Accounting",
+      "description": "Bookkeeping and invoicing patterns.",
+      "items": [
+        {
+          "id": "accounting-core",
+          "title": "Accounting core model",
+          "summary": "Chart of accounts, journals, double-entry, invoices, expenses, reports, tax.",
+          "content": "Invoices should be creatable in 3 steps or fewer from a contact. Provide recurring invoices, expense tracking, bank reconciliation, and the standard report set: P&L, balance sheet, cash flow, aged receivables/payables.",
+          "rules": ["Invoice creation <=3 steps", "Include P&L, balance sheet, cash flow", "Aged receivables/payables reports", "Recurring invoices"],
+          "tags": ["accounting", "invoicing", "finance"]
+        },
+        {
+          "id": "accounting-permissions",
+          "title": "Accounting permissions & audit",
+          "summary": "Role-based access (viewer, accountant, admin), with a full audit trail on every change.",
+          "content": "Financial data is sensitive. Never allow silent changes - every modification is logged with who/when/what. Export all reports to PDF/CSV. Support multiple currencies and tax rates out of the box.",
+          "rules": ["RBAC: viewer/accountant/admin", "Full audit trail", "PDF/CSV export everywhere", "Multi-currency + multi-tax"],
+          "tags": ["accounting", "permissions", "audit"]
+        }
+      ]
+    },
+    {
+      "id": "hr",
+      "name": "HR",
+      "description": "People management and employee lifecycle.",
+      "items": [
+        {
+          "id": "hr-core",
+          "title": "HR core model",
+          "summary": "Employee profile, onboarding checklist, leave/time-off, performance, payroll summary, document store.",
+          "content": "Core flows: hire -> onboard (checklist) -> manage time off -> review -> offboard. Time-off must show remaining balance, approvals with a simple workflow, and a team calendar. Documents (contracts, IDs) stored per employee with expiry alerts.",
+          "rules": ["Onboarding checklist flow", "Time-off with balances + approvals", "Document store with expiry alerts", "Review cycles"],
+          "tags": ["hr", "people", "onboarding"]
+        },
+        {
+          "id": "hr-self-service",
+          "title": "Employee self-service",
+          "summary": "Employees manage their own profile, time-off requests and payslips; managers approve; admins configure.",
+          "content": "Three personas: employee (self-service), manager (approvals + team view), admin (policy/config). Self-service reduces HR tickets massively. Sensitive fields (salary, reviews) visible only to the employee and admins.",
+          "rules": ["Employee self-service for time-off/profile", "Manager approvals", "Role-based field visibility"],
+          "tags": ["hr", "self-service", "roles"]
+        }
+      ]
+    },
+    {
+      "id": "erp",
+      "name": "ERP",
+      "description": "End-to-end business resource planning.",
+      "items": [
+        {
+          "id": "erp-modules",
+          "title": "ERP module architecture",
+          "summary": "Inventory, procurement, sales, finance, manufacturing, reporting - unified around one product master.",
+          "content": "One master data core (products, customers, suppliers, locations) shared across modules. Navigation groups modules with a global search. Every module exports its data. Permissions are per-module with granular roles.",
+          "rules": ["Single product/party master data", "Module-based navigation + global search", "Per-module permissions"],
+          "tags": ["erp", "modules", "enterprise"]
+        },
+        {
+          "id": "erp-inventory",
+          "title": "ERP inventory essentials",
+          "summary": "Multi-warehouse stock, low-stock alerts, stock movement history, and batch/lot tracking.",
+          "content": "Inventory must show: on-hand, available, committed, in-transit, and reorder points. Every stock movement is traceable. Alerts fire on low stock and expiration.",
+          "rules": ["Multi-warehouse stock levels", "Movement history traceable", "Low-stock alerts", "Batch/lot tracking"],
+          "tags": ["erp", "inventory", "supply-chain"]
+        }
+      ]
+    },
+    {
+      "id": "marketplace",
+      "name": "Marketplace",
+      "description": "Two-sided platforms - buyers and sellers.",
+      "items": [
+        {
+          "id": "marketplace-core",
+          "title": "Marketplace core mechanics",
+          "summary": "Listings, search/filter, transactions, reviews, and trust signals (verified seller, ratings, returns).",
+          "content": "Balance both sides: rich seller onboarding and buyer trust. Search must support category filters, price range, location, and sorting. Reviews come after transaction completion with a response mechanism. Escrow/payment protection builds trust for high-value items.",
+          "rules": ["Seller onboarding + buyer trust signals", "Search with category/price/location filters", "Post-transaction reviews with replies", "Payment protection"],
+          "tags": ["marketplace", "two-sided", "trust"]
+        },
+        {
+          "id": "marketplace-conversion",
+          "title": "Marketplace conversion",
+          "summary": "Clear item page: photos, price, shipping, seller rating, reviews, and a single 'Buy' action above the fold.",
+          "content": "Item pages convert when the price, photos, seller credibility, and buy action are all above the fold. Show shipping and return policy early. Display sold counts and review volume as social proof.",
+          "rules": ["Price + photos + buy above the fold", "Seller rating visible on item page", "Shipping/returns shown early"],
+          "tags": ["marketplace", "conversion", "commerce"]
+        }
+      ]
+    },
+    {
+      "id": "healthcare",
+      "name": "Healthcare",
+      "description": "Patient-facing and clinical workflows.",
+      "items": [
+        {
+          "id": "healthcare-core",
+          "title": "Healthcare core model",
+          "summary": "Appointments, patient records, prescriptions, billing, and compliance (privacy, audit, consent).",
+          "content": "Appointment booking with calendar + reminders (reduces no-shows). Patient records with controlled access. Prescriptions with interaction checks where possible. Strict audit logging and explicit consent management are mandatory.",
+          "rules": ["Appointment booking + reminders", "Controlled patient record access", "Audit logging mandatory", "Explicit consent management"],
+          "tags": ["healthcare", "appointments", "compliance"]
+        },
+        {
+          "id": "healthcare-ux",
+          "title": "Healthcare UX",
+          "summary": "Simple language, large touch targets, emergency paths always visible, and minimal cognitive load for stressed users.",
+          "content": "Users are often stressed or unwell. Use plain language, generous spacing, large buttons, and never bury the emergency/cancel options. Reduce steps for booking a follow-up.",
+          "rules": ["Plain language + large targets", "Emergency actions always visible", "Follow-up booking in <=2 steps"],
+          "tags": ["healthcare", "ux", "accessibility"]
+        }
+      ]
+    },
+    {
+      "id": "education",
+      "name": "Education",
+      "description": "Learning platforms and academies.",
+      "items": [
+        {
+          "id": "education-core",
+          "title": "Education core model",
+          "summary": "Courses -> modules -> lessons, with progress tracking, quizzes, certificates, and instructor tools.",
+          "content": "Learners need visible progress (percent complete, next lesson), continuity (resume where left off), and motivation (streaks, milestones, certificates). Instructors need a simple course-builder and student analytics.",
+          "rules": ["Progress tracking + resume", "Milestones/certificates", "Simple course builder", "Student analytics for instructors"],
+          "tags": ["education", "courses", "learning"]
+        },
+        {
+          "id": "education-retention",
+          "title": "Learning retention patterns",
+          "summary": "Spaced repetition, quizzes after lessons, and email/app reminders to keep learners returning.",
+          "content": "Chunk content into 5-10 minute lessons. Quiz after each lesson. Use spaced repetition for review. Automated reminders nudge at-risk learners before they churn.",
+          "rules": ["5-10 min lesson chunks", "Quiz per lesson", "Reminders for at-risk learners"],
+          "tags": ["education", "retention", "engagement"]
+        }
+      ]
+    },
+    {
+      "id": "inventory-pos",
+      "name": "Inventory & POS",
+      "description": "Retail stock and point of sale.",
+      "items": [
+        {
+          "id": "pos-core",
+          "title": "POS essentials",
+          "summary": "Lightning-fast checkout, barcode scanning, payment splits, receipts, and offline resilience.",
+          "content": "A POS must handle checkout in seconds: barcode or search, tap payment, print/email receipt. Support split payments and refunds. Cashier actions must be auditable. Offline mode keeps selling when internet drops, syncing later.",
+          "rules": ["Checkout in seconds", "Barcode scanning + split payments", "Refunds with audit", "Offline mode with sync"],
+          "tags": ["pos", "retail", "checkout"]
+        },
+        {
+          "id": "inventory-core",
+          "title": "Inventory management",
+          "summary": "Stock levels, reorder points, suppliers, purchase orders, and stocktaking.",
+          "content": "Track incoming (purchase orders) and outgoing (sales, adjustments) stock. Reorder point triggers purchase suggestion. Cycle-count stocktaking with variance reporting.",
+          "rules": ["Reorder point suggestions", "Purchase order workflow", "Stocktaking with variance report"],
+          "tags": ["inventory", "supply-chain", "retail"]
+        }
+      ]
+    },
+    {
+      "id": "booking",
+      "name": "Booking",
+      "description": "Appointments and reservations.",
+      "items": [
+        {
+          "id": "booking-core",
+          "title": "Booking flow",
+          "summary": "Pick service -> pick provider -> pick time -> confirm. 4 steps max, with calendar availability and instant confirmation.",
+          "content": "Show real-time availability. Confirm instantly with calendar integration and reminders. Support reschedule and cancel with clear policies. Collect payment or deposit where required.",
+          "rules": ["Service -> provider -> time -> confirm", "Real-time availability", "Instant confirmation + reminders", "Easy reschedule/cancel"],
+          "tags": ["booking", "calendar", "appointments"]
+        },
+        {
+          "id": "booking-business",
+          "title": "Booking business rules",
+          "summary": "Staff calendar, buffer times, no-show policy, and peak-hour management.",
+          "content": "Businesses manage multiple staff calendars with buffer time between bookings. No-show protection (deposits, reminders). Handle peak hours with waitlists or dynamic pricing.",
+          "rules": ["Multi-staff calendars", "Buffer times between bookings", "No-show protection", "Waitlist option"],
+          "tags": ["booking", "scheduling", "operations"]
+        }
+      ]
+    },
+    {
+      "id": "recruitment",
+      "name": "Recruitment",
+      "description": "Hiring and applicant tracking.",
+      "items": [
+        {
+          "id": "recruitment-core",
+          "title": "Applicant tracking core",
+          "summary": "Job -> candidates -> pipeline stages -> interviews -> offer, with a kanban board and scorecards.",
+          "content": "Candidates move through stages on a kanban board (applied, screening, interview, offer). Scorecards per candidate per interviewer. Scheduled interviews with calendar sync. Pipeline reports (time-to-hire, source quality).",
+          "rules": ["Kanban pipeline board", "Interview scorecards", "Time-to-hire reporting", "Source quality analytics"],
+          "tags": ["recruitment", "hiring", "ats"]
+        },
+        {
+          "id": "recruitment-ux",
+          "title": "Recruitment UX",
+          "summary": "Apply in <=3 minutes, one resume upload, and status updates that keep candidates informed.",
+          "content": "Candidate experience is a hiring brand. Application should be short (resume + a few fields). Auto-acknowledge applications and send status change updates so candidates aren't left in the dark.",
+          "rules": ["Apply in <=3 minutes", "One resume upload", "Status update emails"],
+          "tags": ["recruitment", "candidate-experience"]
+        }
+      ]
+    },
+    {
+      "id": "project-management",
+      "name": "Project Management",
+      "description": "Work tracking and team collaboration.",
+      "items": [
+        {
+          "id": "pm-core",
+          "title": "Project management core",
+          "summary": "Tasks, boards, sprints, timelines, dependencies, and reporting - switchable between kanban, list, and calendar views.",
+          "content": "The same task data must render as kanban, list, or timeline without duplication. Support milestones, assignees, due dates, dependencies, and @mentions. Automated reports: burndown, workload, overdue.",
+          "rules": ["Multi-view (kanban/list/timeline)", "Dependencies + milestones", "Burndown/workload reports"],
+          "tags": ["project-management", "tasks", "kanban"]
+        },
+        {
+          "id": "pm-collaboration",
+          "title": "Collaboration patterns",
+          "summary": "Mentions, comments with threads, activity feeds, and notifications - contextually filtered to avoid noise.",
+          "content": "Collaboration must be contextual (comment directly on the task). Notifications are per-user with digest options. Every change is visible in an activity feed with attribution.",
+          "rules": ["Contextual comments/mentions", "Per-user notification controls", "Attributed activity feed"],
+          "tags": ["project-management", "collaboration"]
+        }
+      ]
+    }
+  ]
+}

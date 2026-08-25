@@ -1,0 +1,76 @@
+# AIED Development Workflow
+# Defines the standard workflow for software development tasks
+
+name: development
+description: Standard software development workflow
+
+steps:
+  - name: requirements
+    agent: product-manager
+    description: Analyze and document requirements
+    outputs:
+      - requirements_doc
+      - user_stories
+      - acceptance_criteria
+
+  - name: architecture
+    agent: software-architect
+    description: Design system architecture
+    depends_on: requirements
+    outputs:
+      - architecture_doc
+      - data_model
+      - api_spec
+
+  - name: implementation
+    agent: openclaw
+    description: Write production code
+    depends_on: architecture
+    parallel:
+      - agent: backend-engineer
+        focus: backend
+      - agent: frontend-engineer
+        focus: frontend
+
+  - name: review
+    agent: code-reviewer
+    description: Review code quality
+    depends_on: implementation
+    outputs:
+      - review_report
+
+  - name: testing
+    agent: qa-engineer
+    description: Run automated tests
+    depends_on: review
+    outputs:
+      - test_report
+
+  - name: security
+    agent: security-engineer
+    description: Security audit
+    depends_on: implementation
+    outputs:
+      - security_report
+
+  - name: build
+    agent: build-engineer
+    description: Build the application
+    depends_on: testing
+    outputs:
+      - build_artifact
+
+  - name: deploy
+    agent: deployment-engineer
+    description: Deploy to production
+    depends_on: build
+    requires_approval: true
+    approver: engineering_director
+    outputs:
+      - deployment_status
+
+  - name: monitor
+    agent: analytics-agent
+    description: Monitor production
+    depends_on: deploy
+    continuous: true

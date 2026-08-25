@@ -1,0 +1,311 @@
+{
+  "id": "competitor_database",
+  "name": "Competitor Database",
+  "description": "Structured database of products by industry. Records navigation, pricing, onboarding, dashboard layout, mobile experience, features, strengths, weaknesses and UX observations. Used by research agents to benchmark any new build.",
+  "icon": "Search",
+  "accent": "red",
+  "tags": ["competitors", "benchmark", "research", "market", "industry"],
+  "categories": [
+    {
+      "id": "accounting",
+      "name": "Accounting",
+      "description": "Bookkeeping, invoicing and finance tools.",
+      "items": [
+        {
+          "id": "quickbooks",
+          "title": "QuickBooks",
+          "summary": "The SMB accounting default. Broad features, dense dashboard, invoicing-first workflows.",
+          "content": "QuickBooks is the incumbent SMB accounting tool. It sets the mental model for invoicing, expense tracking, and reports, but its density and upsell-heavy flows frustrate users.",
+          "rules": ["Invoicing-first navigation", "Dense dashboard with many widgets"],
+          "tags": ["accounting", "quickbooks", "smb"],
+          "metadata": {
+            "industry": "Accounting",
+            "pricing_model": "Subscription (per-feature tiers)",
+            "onboarding": "Multi-step business setup, slow",
+            "dashboard_layout": "Dense widgets: income, expenses, profit, bank feed",
+            "mobile_experience": "Strong mobile app for invoicing",
+            "feature_set": "Invoicing, expenses, payroll, inventory, tax, reports",
+            "strengths": "Completeness, bank feeds, ecosystem",
+            "weaknesses": "Complexity, upsells, navigation overload",
+            "ux_observations": "Users complain about feature-discovery and confusing upsells; a simpler focused dashboard is a differentiator."
+          }
+        },
+        {
+          "id": "xero",
+          "title": "Xero",
+          "summary": "Cleaner, simpler accounting competitor - the UX benchmark for modern SMB accounting.",
+          "content": "Xero is the cleaner alternative: a minimal bank-feed-centric dashboard and simpler navigation. Widely seen as better designed than QuickBooks for small teams.",
+          "rules": ["Bank-feed centric dashboard", "Minimal navigation"],
+          "tags": ["accounting", "xero", "smb"],
+          "metadata": {
+            "industry": "Accounting",
+            "pricing_model": "Subscription tiers by feature",
+            "onboarding": "Quick bank connection, fast start",
+            "dashboard_layout": "Minimal: bank balance, cashflow chart, pending invoices",
+            "mobile_experience": "Good mobile app",
+            "feature_set": "Invoicing, bank feeds, bills, payroll, projects",
+            "strengths": "Simplicity, clean UX, speed",
+            "weaknesses": "Fewer advanced features than QuickBooks",
+            "ux_observations": "Proves simple dashboards beat dense ones for SMB trust and satisfaction."
+          }
+        },
+        {
+          "id": "zoho-books",
+          "title": "Zoho Books",
+          "summary": "Budget-friendly, deep-featured accounting with a steeper learning curve.",
+          "content": "Zoho Books offers near-enterprise features at low cost. Value-focused but with a busier UI and steeper learning curve - targets price-sensitive SMBs.",
+          "rules": ["Low-cost positioning", "Feature-dense UI"],
+          "tags": ["accounting", "zoho", "smb"],
+          "metadata": {
+            "industry": "Accounting",
+            "pricing_model": "Low-cost subscription",
+            "onboarding": "Guided setup wizard",
+            "dashboard_layout": "Moderate density, many module shortcuts",
+            "mobile_experience": "Adequate mobile app",
+            "feature_set": "Invoicing, expenses, inventory, project billing, multi-currency",
+            "strengths": "Price, breadth, integrations",
+            "weaknesses": "Learning curve, UI density",
+            "ux_observations": "Price wins customers, UX loses some of them; opportunity for simpler mid-tier."
+          }
+        }
+      ]
+    },
+    {
+      "id": "crm",
+      "name": "CRM",
+      "description": "Sales and customer relationship tools.",
+      "items": [
+        {
+          "id": "hubspot",
+          "title": "HubSpot",
+          "summary": "The free-CRM wedge: easy start, generous free tier, powerful when adopted.",
+          "content": "HubSpot converts via a genuinely useful free CRM. Its onboarding is smooth and the dashboard centers on deals pipeline with a simple record model. The catch: premium features and paid tiers are heavily marketed inside the product.",
+          "rules": ["Free tier as acquisition wedge", "Pipeline-first dashboard", "In-product paid upgrades"],
+          "tags": ["crm", "hubspot", "inbound"],
+          "metadata": {
+            "industry": "CRM",
+            "pricing_model": "Freemium + paid tiers per module",
+            "onboarding": "Excellent, low-friction free start",
+            "dashboard_layout": "Deals pipeline + activity feed",
+            "mobile_experience": "Strong mobile app",
+            "feature_set": "Contacts, deals, marketing email, forms, help desk",
+            "strengths": "Ease of use, free tier, ecosystem",
+            "weaknesses": "Cost at scale, feature gating",
+            "ux_observations": "The free CRM sets the bar for frictionless signup and simple pipeline UX."
+          }
+        },
+        {
+          "id": "salesforce",
+          "title": "Salesforce",
+          "summary": "The enterprise standard: unmatched power, steep learning curve.",
+          "content": "Salesforce is the enterprise incumbent. Extremely customizable but notoriously complex. Sets expectations for admin-level configuration and enterprise integrations, not for ease of use.",
+          "rules": ["Maximum configurability", "High complexity", "Enterprise features expected"],
+          "tags": ["crm", "salesforce", "enterprise"],
+          "metadata": {
+            "industry": "CRM",
+            "pricing_model": "High per-seat subscription",
+            "onboarding": "Steep, admin-heavy setup",
+            "dashboard_layout": "Customizable, dense",
+            "mobile_experience": "Enterprise mobile app",
+            "feature_set": "Leads, opportunities, forecasting, automation, analytics, app platform",
+            "strengths": "Power, ecosystem, enterprise trust",
+            "weaknesses": "Complexity, cost, slow UI",
+            "ux_observations": "Demonstrates that simplicity is a real differentiator against enterprise incumbents."
+          }
+        },
+        {
+          "id": "pipedrive",
+          "title": "Pipedrive",
+          "summary": "Deal-first CRM; the pipeline is the entire product - the UX benchmark for pipeline simplicity.",
+          "content": "Pipedrive is built entirely around the visual pipeline. Minimal record fields, drag-drop deals, activity-based selling. Proof that one strong metaphor beats feature sprawl.",
+          "rules": ["Pipeline is the whole product", "Drag-drop deal management"],
+          "tags": ["crm", "pipedrive", "pipeline"],
+          "metadata": {
+            "industry": "CRM",
+            "pricing_model": "Per-seat subscription tiers",
+            "onboarding": "Fast pipeline setup wizard",
+            "dashboard_layout": "Pipeline kanban + activities",
+            "mobile_experience": "Good mobile pipeline",
+            "feature_set": "Deals, activities, contacts, email sync, reporting",
+            "strengths": "Pipeline simplicity, sales focus",
+            "weaknesses": "Lighter marketing/automation features",
+            "ux_observations": "A single strong interaction model (pipeline) creates a coherent, easy product."
+          }
+        }
+      ]
+    },
+    {
+      "id": "project-management",
+      "name": "Project Management",
+      "description": "Task and team collaboration tools.",
+      "items": [
+        {
+          "id": "clickup",
+          "title": "ClickUp",
+          "summary": "Everything-in-one PM with a huge feature set; powerful but can overwhelm.",
+          "content": "ClickUp targets the all-in-one user with views, docs, goals, and automation. Enormous feature breadth creates discovery problems; the value is there but hidden behind complexity.",
+          "rules": ["Multi-view flexibility", "Feature breadth = complexity risk"],
+          "tags": ["project-management", "clickup", "all-in-one"],
+          "metadata": {
+            "industry": "Project Management",
+            "pricing_model": "Freemium + paid tiers",
+            "onboarding": "Template-heavy, can be overwhelming",
+            "dashboard_layout": "Custom dashboards, many views",
+            "mobile_experience": "Functional mobile app",
+            "feature_set": "Tasks, docs, goals, time tracking, automation, dashboards",
+            "strengths": "Breadth, price, views",
+            "weaknesses": "Complexity, performance, learning curve",
+            "ux_observations": "Warns against feature sprawl - the all-in-one approach must manage cognitive load."
+          }
+        },
+        {
+          "id": "asana",
+          "title": "Asana",
+          "summary": "Polished, balanced PM: strong UX, clear hierarchy, good for structured teams.",
+          "content": "Asana is the UX benchmark among full PM tools: clean hierarchy (projects -> tasks -> subtasks), lists/timeline/boards, and a calm interface. Simpler than ClickUp, less powerful than Jira.",
+          "rules": ["Clean project hierarchy", "Balanced feature set"],
+          "tags": ["project-management", "asana", "ux"],
+          "metadata": {
+            "industry": "Project Management",
+            "pricing_model": "Freemium + paid per-user",
+            "onboarding": "Smooth templates + guided setup",
+            "dashboard_layout": "Project lists, timeline, boards, workload",
+            "mobile_experience": "Polished mobile app",
+            "feature_set": "Tasks, timelines, portfolios, forms, automation",
+            "strengths": "UX polish, clarity, balance",
+            "weaknesses": "Can get expensive, fewer dev-oriented features",
+            "ux_observations": "Shows hierarchy clarity and restrained feature growth create an effortless product."
+          }
+        },
+        {
+          "id": "monday",
+          "title": "Monday.com",
+          "summary": "Visually rich work OS; color-coded boards win non-technical teams.",
+          "content": "Monday.com's visual boards (color, groupings, automations) appeal to non-technical teams. Great for marketing/ops; can feel busy for power project managers.",
+          "rules": ["Visual color-coded boards", "Non-technical team appeal"],
+          "tags": ["project-management", "monday", "boards"],
+          "metadata": {
+            "industry": "Project Management",
+            "pricing_model": "Per-seat subscription, high sticker price",
+            "onboarding": "Board templates, fast start",
+            "dashboard_layout": "Colorful boards, dashboard widgets",
+            "mobile_experience": "Good mobile app",
+            "feature_set": "Boards, views, automations, integrations, dashboards",
+            "strengths": "Visual appeal, ease, automation",
+            "weaknesses": "Cost per seat, visual noise",
+            "ux_observations": "Color-coding and friendly visuals make work software feel approachable to non-engineers."
+          }
+        }
+      ]
+    },
+    {
+      "id": "ai-productivity",
+      "name": "AI Productivity",
+      "description": "AI-powered assistants and automation.",
+      "items": [
+        {
+          "id": "notion-ai",
+          "title": "Notion + AI",
+          "summary": "The workspace + AI assistant model: AI inline where you already work, not a separate tool.",
+          "content": "Notion demonstrates the winning AI UX: AI appears inline in the document where the user already works (ask, autofill, edit). This beats standalone chat tools for workflow integration.",
+          "rules": ["AI inline in the work surface", "Ask/edit within existing content"],
+          "tags": ["ai", "notion", "productivity"],
+          "metadata": {
+            "industry": "AI Productivity",
+            "pricing_model": "Freemium + AI add-on subscription",
+            "onboarding": "Template-first",
+            "dashboard_layout": "Page/workspace hierarchy",
+            "mobile_experience": "Good mobile apps",
+            "feature_set": "Docs, databases, wikis, AI inline, sync",
+            "strengths": "Flexibility, inline AI, ecosystem",
+            "weaknesses": "Learning curve, performance on large DBs",
+            "ux_observations": "AI works best embedded in context, not as a separate product."
+          }
+        },
+        {
+          "id": "chatgpt",
+          "title": "ChatGPT",
+          "summary": "The general chat assistant baseline: single input, threads, shareable responses.",
+          "content": "ChatGPT set the chat baseline. Key patterns: thread history, code blocks with copy, share links, and now agentic features. Its UX is the reference for any conversational AI product.",
+          "rules": ["Thread history + share links", "Code blocks with copy button"],
+          "tags": ["ai", "chatgpt", "conversation"],
+          "metadata": {
+            "industry": "AI Productivity",
+            "pricing_model": "Freemium + premium subscription",
+            "onboarding": "Zero-friction, immediate use",
+            "dashboard_layout": "Chat thread list + composer",
+            "mobile_experience": "Strong mobile + voice",
+            "feature_set": "Chat, file upload, image gen, code, browsing, memory",
+            "strengths": "Brand, model quality, simplicity",
+            "weaknesses": "Hallucination risk, trust, content policy friction",
+            "ux_observations": "Zero-friction onboarding (type and go) is the gold standard for AI products."
+          }
+        },
+        {
+          "id": "intercom-fin",
+          "title": "Intercom (Fin)",
+          "summary": "Customer service AI copilot embedded in a support inbox, with agent handoff.",
+          "content": "Intercom's Fin shows how to combine AI chat with human handoff: AI answers common issues, escalation is one click, and everything lives in the existing inbox. Smooth hybrid AI-human UX.",
+          "rules": ["AI + human handoff path", "Everything in existing inbox"],
+          "tags": ["ai", "support", "intercom"],
+          "metadata": {
+            "industry": "AI Productivity",
+            "pricing_model": "Subscription per resolution",
+            "onboarding": "Connect help content, deploy in hours",
+            "dashboard_layout": "Support inbox + AI assistant",
+            "mobile_experience": "Good mobile apps",
+            "feature_set": "AI answers, human handoff, help center, analytics",
+            "strengths": "Fast value, hybrid model, measured resolutions",
+            "weaknesses": "Cost per resolution, content dependency",
+            "ux_observations": "Clear handoff between AI and humans keeps trust while cutting ticket volume."
+          }
+        }
+      ]
+    },
+    {
+      "id": "ecommerce",
+      "name": "E-Commerce",
+      "description": "Storefront and checkout platforms.",
+      "items": [
+        {
+          "id": "shopify",
+          "title": "Shopify",
+          "summary": "The commerce benchmark: fast setup, clean admin, and the most optimized checkout flow.",
+          "content": "Shopify's admin and checkout set the bar: minimal clicks to product, clean order management, and a one-page checkout with express payments. Its success validates simplicity-first commerce.",
+          "rules": ["One-page checkout + express pay", "Clean order/product admin"],
+          "tags": ["ecommerce", "shopify", "checkout"],
+          "metadata": {
+            "industry": "E-Commerce",
+            "pricing_model": "Monthly subscription + transaction fees",
+            "onboarding": "Fast store setup wizard",
+            "dashboard_layout": "Sales dashboard + order feed",
+            "mobile_experience": "Excellent admin + storefront apps",
+            "feature_set": "Store, products, checkout, shipping, marketing, analytics",
+            "strengths": "Checkout conversion, ecosystem, onboarding",
+            "weaknesses": "Subscription + transaction fees, customization limits",
+            "ux_observations": "The benchmark checkout: address autofill, express wallets, one page, no account required."
+          }
+        },
+        {
+          "id": "woocommerce",
+          "title": "WooCommerce",
+          "summary": "The flexible open-source option: total control, higher setup burden.",
+          "content": "WooCommerce trades ease for control: free core, WordPress flexibility, plugin ecosystem - but setup, hosting, and maintenance are on the merchant.",
+          "rules": ["Maximum flexibility", "Higher setup burden"],
+          "tags": ["ecommerce", "woocommerce", "open-source"],
+          "metadata": {
+            "industry": "E-Commerce",
+            "pricing_model": "Free core + paid extensions/hosting",
+            "onboarding": "Technical setup required",
+            "dashboard_layout": "WordPress admin + Woo screens",
+            "mobile_experience": "Variable by theme",
+            "feature_set": "Store, products, payments via extensions, shipping, taxes",
+            "strengths": "Ownership, cost, flexibility",
+            "weaknesses": "Setup complexity, maintenance, performance",
+            "ux_observations": "Shows the market split between managed simplicity (Shopify) and self-managed flexibility."
+          }
+        }
+      ]
+    }
+  ]
+}
