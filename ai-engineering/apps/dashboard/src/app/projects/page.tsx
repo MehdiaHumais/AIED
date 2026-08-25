@@ -136,7 +136,7 @@ export default function ProjectsPage() {
   const [editPriority, setEditPriority] = useState("medium")
   const [prebuiltDesc, setPrebuiltDesc] = useState("")
 
-  const [newProject, setNewProject] = useState({ name: "", codename: "", description: "", tech_stack: "", mode: "scratch", folder: "" })
+  const [newProject, setNewProject] = useState({ name: "", codename: "", description: "", tech_stack: "", folder: "" })
   const [newTask, setNewTask] = useState({ title: "", description: "", priority: "medium", project_id: "", task_mode: "developer" })
 
   const fetchData = () => {
@@ -236,11 +236,6 @@ export default function ProjectsPage() {
       })
       const data = await res.json()
       if (data.project) {
-        await fetch(`http://127.0.0.1:8001/api/projects/${data.project.id}/set-mode`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode: newProject.mode }),
-        })
         if (newProject.folder) {
           await fetch(`http://127.0.0.1:8001/api/projects/${data.project.id}/set-folder`, {
             method: "POST",
@@ -248,7 +243,7 @@ export default function ProjectsPage() {
             body: JSON.stringify({ folder: newProject.folder }),
           })
         }
-        setNewProject({ name: "", codename: "", description: "", tech_stack: "", mode: "scratch", folder: "" })
+        setNewProject({ name: "", codename: "", description: "", tech_stack: "", folder: "" })
         setShowCreateProject(false)
         fetchData()
       }
@@ -512,21 +507,6 @@ export default function ProjectsPage() {
             <input placeholder="Tech stack (comma separated): react, nextjs, tailwind" value={newProject.tech_stack}
               onChange={(e) => setNewProject({ ...newProject, tech_stack: e.target.value })}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
-
-            <div className="flex gap-4">
-              <label className={`flex-1 rounded-lg border p-4 cursor-pointer ${newProject.mode === "scratch" ? "border-primary bg-primary/5" : "border-border"}`}>
-                <input type="radio" name="mode" value="scratch" checked={newProject.mode === "scratch"}
-                  onChange={() => setNewProject({ ...newProject, mode: "scratch" })} className="hidden" />
-                <div className="font-semibold text-sm">Start from Scratch</div>
-                <p className="text-xs text-muted-foreground mt-1">Build a brand new project from nothing</p>
-              </label>
-              <label className={`flex-1 rounded-lg border p-4 cursor-pointer ${newProject.mode === "prebuilt" ? "border-primary bg-primary/5" : "border-border"}`}>
-                <input type="radio" name="mode" value="prebuilt" checked={newProject.mode === "prebuilt"}
-                  onChange={() => setNewProject({ ...newProject, mode: "prebuilt" })} className="hidden" />
-                <div className="font-semibold text-sm">Pre-built Project</div>
-                <p className="text-xs text-muted-foreground mt-1">Work on an existing project (analyze, fix, deploy)</p>
-              </label>
-            </div>
 
             <div>
               <label className="text-sm font-medium mb-1 block">Project Folder</label>
@@ -984,7 +964,7 @@ export default function ProjectsPage() {
                 {browserParent && (
                   <button onClick={() => openBrowser(browserParent)} className="text-xs bg-secondary px-2 py-1 rounded">Back</button>
                 )}
-                <span className="text-sm font-mono text-muted-foreground truncate">{browserPath || "Select a drive"}</span>
+                <span className="text-sm font-mono text-muted-foreground truncate">{browserPath || "Project Root"}</span>
               </div>
               <div className="flex-1 overflow-y-auto p-2">
                 {browserLoading ? <div className="text-center py-8 text-muted-foreground">Loading...</div> : (

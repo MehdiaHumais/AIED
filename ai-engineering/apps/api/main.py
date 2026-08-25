@@ -845,26 +845,40 @@ async def read_file(data: dict):
 
 @app.get("/api/files/browse")
 async def browse_folders(path: str = ""):
-    """List folders at a given path so the user can browse their filesystem."""
+    """List folders at a given path so the user can browse project directories."""
+    import platform
+
+    if platform.system() == "Windows":
+        BROWSE_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    else:
+        BROWSE_ROOT = "/var/www/AIED/ai-engineering"
+
+    BROWSE_ROOT = os.path.normpath(BROWSE_ROOT)
+
     if not path:
-        path = "C:\\"
+        path = BROWSE_ROOT
+
+    path = os.path.normpath(path)
+
+    if not path.startswith(BROWSE_ROOT):
+        path = BROWSE_ROOT
 
     if not os.path.exists(path):
-        return {"error": "Path does not exist", "folders": []}
+        return {"error": "Path does not exist", "folders": [], "current_path": BROWSE_ROOT, "parent": BROWSE_ROOT}
 
     folders = []
     try:
         for item in os.listdir(path):
             full = os.path.join(path, item)
-            if os.path.isdir(full) and not item.startswith("."):
+            if os.path.isdir(full) and not item.startswith(".") and not item.startswith("__"):
                 folders.append({"name": item, "path": full, "is_dir": True})
     except PermissionError:
-        return {"error": "Permission denied", "folders": [], "current_path": path}
+        return {"error": "Permission denied", "folders": [], "current_path": path, "parent": os.path.dirname(path)}
 
     folders.sort(key=lambda x: x["name"].lower())
-    parent = os.path.dirname(path) if path else ""
+    parent = os.path.dirname(path) if path != BROWSE_ROOT else ""
 
-    return {"folders": folders, "current_path": path, "parent": parent}
+    return {"folders": folders, "current_path": path, "parent": parent, "root": BROWSE_ROOT}
 
 
 @app.post("/api/files/validate-path")
