@@ -29,6 +29,7 @@ interface Deployment {
   deployment_time_seconds: number
   created_at: string
   completed_at: string | null
+  rollback_available: boolean
 }
 
 interface DeployStep {
