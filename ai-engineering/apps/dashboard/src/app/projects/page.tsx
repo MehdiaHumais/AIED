@@ -122,12 +122,6 @@ export default function ProjectsPage() {
   const [rejectionFeedback, setRejectionFeedback] = useState("")
   const [showRejectModal, setShowRejectModal] = useState<string | null>(null)
   const pollRef = useRef<NodeJS.Timeout | null>(null)
-  const [showBrowser, setShowBrowser] = useState(false)
-  const [browserTarget, setBrowserTarget] = useState<{ projectId: string } | null>(null)
-  const [browserPath, setBrowserPath] = useState("")
-  const [browserFolders, setBrowserFolders] = useState<{ name: string; path: string }[]>([])
-  const [browserParent, setBrowserParent] = useState("")
-  const [browserLoading, setBrowserLoading] = useState(false)
   const [editProject, setEditProject] = useState<Project | null>(null)
   const [editTask, setEditTask] = useState<Task | null>(null)
   const [editName, setEditName] = useState("")
@@ -188,37 +182,13 @@ export default function ProjectsPage() {
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [user?.id])
 
-  const openBrowser = async (startPath?: string) => {
-    setShowBrowser(true)
-    setBrowserLoading(true)
+  const pickFolder = async (setTarget: (path: string) => void) => {
     try {
-      const url = startPath
-        ? `http://127.0.0.1:8001/api/files/browse?path=${encodeURIComponent(startPath)}`
-        : `http://127.0.0.1:8001/api/files/browse`
-      const res = await fetch(url)
+      const res = await fetch("http://127.0.0.1:8001/api/system/select-folder")
       const data = await res.json()
-      setBrowserFolders(data.folders || [])
-      setBrowserParent(data.parent || "")
-      setBrowserPath(data.current_path || "")
+      if (data.path) setTarget(data.path)
     } catch (e: any) {
       setError(e.message)
-    }
-    setBrowserLoading(false)
-  }
-
-  const selectBrowserFolder = async (path: string) => {
-    if (browserTarget) {
-      await fetch(`http://127.0.0.1:8001/api/projects/${browserTarget.projectId}/set-folder`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folder: path }),
-      })
-      setBrowserTarget(null)
-      setShowBrowser(false)
-      fetchData()
-    } else {
-      setNewProject((p) => ({ ...p, folder: path }))
-      setShowBrowser(false)
     }
   }
 
@@ -515,8 +485,8 @@ export default function ProjectsPage() {
             <div>
               <label className="text-sm font-medium mb-1 block">Project Folder</label>
               <div className="flex gap-2">
-                <input value={newProject.folder} readOnly placeholder="Select a folder..." className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono" />
-                <button onClick={() => { setBrowserTarget(null); openBrowser(); }}
+                <input value={newProject.folder} readOnly placeholder="Click Browse to select a folder..." className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono" />
+                <button onClick={() => pickFolder((path) => setNewProject((p) => ({ ...p, folder: path })))}
                   className="rounded-lg bg-secondary px-3 py-2 text-sm">Browse</button>
               </div>
             </div>
@@ -622,7 +592,14 @@ export default function ProjectsPage() {
                 <span>{project.status}</span>
               </div>
               <div className="flex gap-1">
-                <button onClick={() => { setBrowserTarget({ projectId: project.id }); openBrowser(); }}
+                <button onClick={() => pickFolder(async (path) => {
+                    await fetch(`http://127.0.0.1:8001/api/projects/${project.id}/set-folder`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ folder: path }),
+                    })
+                    fetchData()
+                  })}
                   className="text-xs bg-secondary px-2 py-1 rounded hover:bg-secondary/80">{project.folder ? "Change Folder" : "Set Folder"}</button>
                 <button onClick={() => startEditProject(project)}
                   className="text-xs bg-secondary px-2 py-1 rounded hover:bg-secondary/80">Edit</button>
@@ -950,48 +927,6 @@ export default function ProjectsPage() {
                   className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700">
                   Reject and Redo
                 </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {showBrowser && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-            <div className="rounded-xl border border-border bg-card w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl">
-              <div className="flex items-center justify-between p-4 border-b border-border">
-                <h3 className="font-semibold">Select Folder</h3>
-                <button onClick={() => setShowBrowser(false)} className="text-muted-foreground hover:text-foreground text-lg">X</button>
-              </div>
-              <div className="px-4 py-2 bg-background border-b border-border flex items-center gap-2">
-                {browserParent && (
-                  <button onClick={() => openBrowser(browserParent)} className="text-xs bg-secondary px-2 py-1 rounded">Back</button>
-                )}
-                <span className="text-sm font-mono text-muted-foreground truncate">{browserPath || "Select a drive"}</span>
-              </div>
-              <div className="flex-1 overflow-y-auto p-2">
-                {browserLoading ? <div className="text-center py-8 text-muted-foreground">Loading...</div> : (
-                  <div className="grid grid-cols-1 gap-1">
-                    {browserFolders.map((folder) => (
-                      <div key={folder.path} className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-secondary cursor-pointer group"
-                        onDoubleClick={() => openBrowser(folder.path)}>
-                        <span className="text-lg">[DIR]</span>
-                        <span className="text-sm flex-1 truncate">{folder.name}</span>
-                        <button onClick={(e) => { e.stopPropagation(); selectBrowserFolder(folder.path); }}
-                          className="text-xs bg-primary text-primary-foreground px-3 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                          Select
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="p-3 border-t border-border flex gap-2">
-                <input value={browserPath} onChange={(e) => setBrowserPath(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter") openBrowser(browserPath); }}
-                  placeholder="Type a path and press Enter..." className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono" />
-                <button onClick={() => openBrowser(browserPath)} className="rounded-lg bg-secondary px-3 py-2 text-sm">Go</button>
-                <button onClick={() => selectBrowserFolder(browserPath)}
-                  className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground">Use This Folder</button>
               </div>
             </div>
           </div>

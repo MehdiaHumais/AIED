@@ -914,7 +914,7 @@ async def system_select_folder():
     
     try:
         proc = await asyncio.create_subprocess_exec(
-            "python", "-c", script,
+            r"C:\Users\Digital\AppData\Local\Programs\Python\Python311\python.exe", "-c", script,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
