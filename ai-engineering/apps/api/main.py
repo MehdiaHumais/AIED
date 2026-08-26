@@ -447,7 +447,7 @@ async def auth_approve(user_id: str):
     send_approval_email(user.get("email", ""), user.get("name", ""))
     pipeline = app_state.get("pipeline")
     if pipeline:
-        pipeline._add_notification("User Approved", f"{user.get('name', 'User')} ({user.get('email', '')}) has been approved.", "", "success", user_id=user_id)
+        pipeline._add_notification("User Approved", f"{user.get('name', 'User')} ({user.get('email', '')}) has been approved.", "", "success", for_admin=True)
     return result
 
 
@@ -1581,6 +1581,7 @@ async def delete_project(project_id: str):
     for tid in project_tasks:
         hermes.tasks.pop(tid, None)
         pipeline.tasks.pop(tid, None)
+        pipeline.notifications = [n for n in pipeline.notifications if n.get("task_id") != tid]
     del hermes.projects[project_id]
     _persist_both(hermes, pipeline)
     return {"status": "deleted"}

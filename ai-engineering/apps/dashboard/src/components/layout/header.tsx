@@ -28,7 +28,13 @@ export function Header() {
     const uid = user?.id ? `?user_id=${user.id}` : ""
     fetch(`http://127.0.0.1:8001/api/notifications${uid}`)
       .then((r) => r.json())
-      .then((d) => setNotifications(d.notifications || []))
+      .then((d) => {
+        const incoming = d.notifications || []
+        setNotifications(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(incoming)) return prev
+          return incoming
+        })
+      })
       .catch(() => {})
   }
 
