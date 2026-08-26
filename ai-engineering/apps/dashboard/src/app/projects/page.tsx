@@ -622,17 +622,7 @@ export default function ProjectsPage() {
                 <span>{project.status}</span>
               </div>
               <div className="flex gap-1">
-                <button onClick={async () => {
-                  const path = window.prompt("Enter project folder path:", project.folder || "")
-                  if (path !== null && path.trim()) {
-                    await fetch(`http://127.0.0.1:8001/api/projects/${project.id}/set-folder`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ folder: path.trim() }),
-                    })
-                    fetchData()
-                  }
-                }}
+                <button onClick={() => { setBrowserTarget({ projectId: project.id }); openBrowser(); }}
                   className="text-xs bg-secondary px-2 py-1 rounded hover:bg-secondary/80">{project.folder ? "Change Folder" : "Set Folder"}</button>
                 <button onClick={() => startEditProject(project)}
                   className="text-xs bg-secondary px-2 py-1 rounded hover:bg-secondary/80">Edit</button>
