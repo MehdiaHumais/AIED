@@ -162,17 +162,21 @@ export default function ProjectsPage() {
   }
 
   const pollAll = () => {
-    const uid = user?.id ? `?user_id=${user.id}` : ""
     Promise.all([
-      fetch(`http://127.0.0.1:8001/api/projects${uid}`).then((r) => r.json()).catch(() => null),
-      fetch("http://127.0.0.1:8001/api/tasks").then((r) => r.json()).catch(() => null),
-      fetch("http://127.0.0.1:8001/api/pipelines").then((r) => r.json()).catch(() => null),
+      fetch("http://127.0.0.1:8001/api/tasks")
+        .then((r) => r.json())
+        .catch(() => null),
+      fetch("http://127.0.0.1:8001/api/pipelines")
+        .then((r) => r.json())
+        .catch(() => null),
     ])
-      .then(([projData, taskData, pipeData]) => {
-        if (projData && projData.projects) setProjects(projData.projects)
-        if (taskData && taskData.tasks) setTasks(taskData.tasks)
-        if (pipeData && pipeData.pipelines) setPipelineTasks(pipeData.pipelines)
-        setError("")
+      .then(([taskData, pipeData]) => {
+        if (taskData?.tasks) {
+          setTasks(taskData.tasks)
+        }
+        if (pipeData?.pipelines) {
+          setPipelineTasks(pipeData.pipelines)
+        }
       })
       .catch(() => {})
   }
