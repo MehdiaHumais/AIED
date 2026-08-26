@@ -182,7 +182,7 @@ export default function VPSDeployPage() {
         setLogs([])
         setSteps([])
         fetchData()
-        setSelected({ id: data.deployment_id, project_name: form.project_name, status: data.status, github_repo: form.github_repo, branch: form.branch, domain: form.domain, vps_host: form.vps_host, vps_username: form.vps_username, deploy_mode: form.deploy_mode, deploy_strategy: "", detected_stack: {}, deployment_plan: "", commit_sha: "", service_name: "", ssl_enabled: false, health_check_url: "", health_check_passed: false, error_message: "", failed_step: "", recommended_action: "", deployment_time_seconds: 0, created_at: "", completed_at: null })
+        setSelected({ id: data.deployment_id, project_name: form.project_name, status: data.status, github_repo: form.github_repo, branch: form.branch, domain: form.domain, vps_host: form.vps_host, vps_username: form.vps_username, deploy_mode: form.deploy_mode, deploy_strategy: "", detected_stack: {}, deployment_plan: "", commit_sha: "", service_name: "", ssl_enabled: false, health_check_url: "", health_check_passed: false, error_message: "", failed_step: "", recommended_action: "", deployment_time_seconds: 0, created_at: "", completed_at: null, rollback_available: false })
       } else if (data.error) {
         setError(data.error)
       }
