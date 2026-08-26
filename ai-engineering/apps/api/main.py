@@ -524,6 +524,11 @@ async def create_project(data: dict):
             "description": project.description,
             "status": project.status.value,
             "tech_stack": project.tech_stack,
+            "tasks_count": len(project.tasks),
+            "created_at": project.created_at.isoformat(),
+            "mode": getattr(project, "mode", "scratch"),
+            "folder": getattr(project, "folder", ""),
+            "user_id": getattr(project, "user_id", ""),
         }
     }
 
@@ -1529,22 +1534,40 @@ async def clear_notifications_for_task(task_id: str):
 async def set_project_folder(project_id: str, data: dict):
     """Set the folder for a project."""
     hermes: HermesOrchestrator = app_state["hermes"]
+    pipeline: Pipeline = app_state["pipeline"]
+
     project = hermes.projects.get(project_id)
     if not project:
         return {"error": "Project not found"}
+
     project.folder = data.get("folder", "")
-    return {"status": "ok", "folder": project.folder}
+
+    _persist_both(hermes, pipeline)
+
+    return {
+        "status": "ok",
+        "folder": project.folder,
+    }
 
 
 @app.post("/api/projects/{project_id}/set-mode")
 async def set_project_mode(project_id: str, data: dict):
     """Set the mode for a project (scratch or prebuilt)."""
     hermes: HermesOrchestrator = app_state["hermes"]
+    pipeline: Pipeline = app_state["pipeline"]
+
     project = hermes.projects.get(project_id)
     if not project:
         return {"error": "Project not found"}
+
     project.mode = data.get("mode", "scratch")
-    return {"status": "ok", "mode": project.mode}
+
+    _persist_both(hermes, pipeline)
+
+    return {
+        "status": "ok",
+        "mode": project.mode,
+    }
 
 
 @app.delete("/api/projects/{project_id}")
