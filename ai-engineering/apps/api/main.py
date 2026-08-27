@@ -989,6 +989,20 @@ async def agent_update_folder(data: dict):
     return result
 
 
+@app.get("/api/agent/select-folder")
+async def agent_select_folder(user_id: str = ""):
+    """Open a native folder picker on the USER'S machine (through Local Agent)."""
+    if not user_id:
+        return {"error": "user_id required"}
+    if not agent_manager.is_connected(user_id):
+        return {"error": "Local Agent not connected"}
+    result = await agent_manager.select_folder(user_id)
+    if result.get("success") and result.get("path"):
+        folder = result["path"]
+        await agent_manager.update_project_folder(user_id, folder)
+    return result
+
+
 @app.post("/api/agent/command/{user_id}/{command}")
 async def agent_command(user_id: str, command: str, data: dict):
     if command == "write_file":
@@ -1003,6 +1017,10 @@ async def agent_command(user_id: str, command: str, data: dict):
         return await agent_manager.read_tree(user_id)
     elif command == "run_command":
         return await agent_manager.run_command(user_id, data.get("command", ""), data.get("timeout", 120), data.get("env"))
+    elif command == "select_folder":
+        return await agent_manager.select_folder(user_id)
+    elif command == "list_root_folders":
+        return await agent_manager.list_root_folders(user_id)
     else:
         return {"error": f"Unknown command: {command}"}
 
@@ -1077,6 +1095,7 @@ async def start_pipeline(task_id: str):
         project_description=project_desc,
         project_name=project_name,
         task_mode=task_mode,
+        user_id=getattr(project, "user_id", "") if project else "",
     )
     pipeline.tasks[task_id] = pt
     pt._persist_callback = pipeline._persist
@@ -1626,6 +1645,13 @@ async def set_project_folder(project_id: str, data: dict):
     project.folder = data.get("folder", "")
 
     _persist_both(hermes, pipeline)
+
+    user_id = getattr(project, "user_id", "") or ""
+    if user_id and project.folder:
+        try:
+            await agent_manager.update_project_folder(user_id, project.folder)
+        except Exception as e:
+            print(f"[API] Agent folder sync failed: {e}")
 
     return {
         "status": "ok",
@@ -3569,6 +3595,7 @@ async def ceo_chat(conv_id: str, body: dict = Body(...)):
                         project_description=request_text,
                         project_name=conv.project_name or "",
                         task_mode="developer",
+                        user_id=conv.context.get("user_id", "") or "",
                     )
                     pipeline.tasks[task_id] = pt
                     pt._persist_callback = pipeline._persist
@@ -3781,6 +3808,7 @@ async def workflow_start_build(run_id: str, data: dict = {}):
         project_folder=folder,
         project_description=(package["request"] or run.name)[:2000],
         project_name=run.name,
+        user_id=data.get("user_id", "") or getattr(project, "user_id", "") or "",
     )
     pt.dev_package = package["markdown"]
     pipeline.tasks[task.id] = pt

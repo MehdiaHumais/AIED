@@ -111,43 +111,60 @@ class AgentManager:
     def get_all_status(self) -> list[dict]:
         return [a.to_dict() for a in self.agents.values()]
 
-    async def write_file(self, user_id: str, path: str, content: str) -> dict:
+    async def write_file(self, user_id: str, path: str, content: str, project_folder: str = "") -> dict:
         agent = self.get_agent(user_id)
         if not agent:
             return {"success": False, "error": "Local Agent not connected"}
-        return await agent.send_command("write_file", {"path": path, "content": content})
+        params = {"path": path, "content": content}
+        if project_folder:
+            params["project_folder"] = project_folder
+        return await agent.send_command("write_file", params)
 
-    async def delete_file(self, user_id: str, path: str) -> dict:
+    async def delete_file(self, user_id: str, path: str, project_folder: str = "") -> dict:
         agent = self.get_agent(user_id)
         if not agent:
             return {"success": False, "error": "Local Agent not connected"}
-        return await agent.send_command("delete_file", {"path": path})
+        params = {"path": path}
+        if project_folder:
+            params["project_folder"] = project_folder
+        return await agent.send_command("delete_file", params)
 
-    async def read_file(self, user_id: str, path: str) -> dict:
+    async def read_file(self, user_id: str, path: str, project_folder: str = "") -> dict:
         agent = self.get_agent(user_id)
         if not agent:
             return {"success": False, "error": "Local Agent not connected"}
-        return await agent.send_command("read_file", {"path": path})
+        params = {"path": path}
+        if project_folder:
+            params["project_folder"] = project_folder
+        return await agent.send_command("read_file", params)
 
-    async def list_files(self, user_id: str, path: str = "") -> dict:
+    async def list_files(self, user_id: str, path: str = "", project_folder: str = "") -> dict:
         agent = self.get_agent(user_id)
         if not agent:
             return {"success": False, "error": "Local Agent not connected"}
-        return await agent.send_command("list_files", {"path": path})
+        params = {"path": path}
+        if project_folder:
+            params["project_folder"] = project_folder
+        return await agent.send_command("list_files", params)
 
-    async def read_tree(self, user_id: str) -> dict:
+    async def read_tree(self, user_id: str, project_folder: str = "") -> dict:
         agent = self.get_agent(user_id)
         if not agent:
             return {"success": False, "error": "Local Agent not connected"}
-        return await agent.send_command("read_tree", {})
+        params = {}
+        if project_folder:
+            params["project_folder"] = project_folder
+        return await agent.send_command("read_tree", params)
 
-    async def run_command(self, user_id: str, command: str, timeout: int = 120, env: dict = None) -> dict:
+    async def run_command(self, user_id: str, command: str, timeout: int = 120, env: dict = None, project_folder: str = "") -> dict:
         agent = self.get_agent(user_id)
         if not agent:
             return {"success": False, "error": "Local Agent not connected"}
         params = {"command": command, "timeout": timeout}
         if env:
             params["env"] = env
+        if project_folder:
+            params["project_folder"] = project_folder
         return await agent.send_command("run_command", params, timeout=timeout + 10)
 
     async def update_project_folder(self, user_id: str, folder: str) -> dict:
@@ -163,6 +180,20 @@ class AgentManager:
             return {"success": True}
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+    async def select_folder(self, user_id: str) -> dict:
+        """Ask the Local Agent to open a native folder picker on the user's machine."""
+        agent = self.get_agent(user_id)
+        if not agent:
+            return {"success": False, "error": "Local Agent not connected"}
+        return await agent.send_command("select_folder", {}, timeout=180)
+
+    async def list_root_folders(self, user_id: str) -> dict:
+        """Ask the Local Agent to list drives/folders on the user's machine."""
+        agent = self.get_agent(user_id)
+        if not agent:
+            return {"success": False, "error": "Local Agent not connected"}
+        return await agent.send_command("list_root_folders", {}, timeout=30)
 
     def handle_message(self, user_id: str, msg: dict):
         msg_type = msg.get("type", "")

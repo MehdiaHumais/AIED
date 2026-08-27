@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { useAuth } from "@/components/auth-provider"
+import { Monitor } from "lucide-react"
 
 interface Project {
   id: string
@@ -129,6 +130,8 @@ export default function ProjectsPage() {
   const [editCodename, setEditCodename] = useState("")
   const [editPriority, setEditPriority] = useState("medium")
   const [prebuiltDesc, setPrebuiltDesc] = useState("")
+  const [agentConnected, setAgentConnected] = useState(false)
+  const [agentFolder, setAgentFolder] = useState("")
 
   const [newProject, setNewProject] = useState({ name: "", codename: "", description: "", tech_stack: "", folder: "", mode: "scratch" })
   const [newTask, setNewTask] = useState({ title: "", description: "", priority: "medium", project_id: "", task_mode: "developer" })
@@ -156,6 +159,7 @@ export default function ProjectsPage() {
   }
 
   const pollAll = () => {
+    const uid = user?.id || ""
     Promise.all([
       fetch("http://127.0.0.1:8001/api/tasks")
         .then((r) => r.json())
@@ -163,13 +167,20 @@ export default function ProjectsPage() {
       fetch("http://127.0.0.1:8001/api/pipelines")
         .then((r) => r.json())
         .catch(() => null),
+      fetch(`http://127.0.0.1:8001/api/agent/status?user_id=${uid}`)
+        .then((r) => r.json())
+        .catch(() => null),
     ])
-      .then(([taskData, pipeData]) => {
+      .then(([taskData, pipeData, agentData]) => {
         if (taskData?.tasks) {
           setTasks(taskData.tasks)
         }
         if (pipeData?.pipelines) {
           setPipelineTasks(pipeData.pipelines)
+        }
+        if (agentData) {
+          setAgentConnected(agentData.connected || false)
+          setAgentFolder(agentData.project_folder || "")
         }
       })
       .catch(() => {})
@@ -184,9 +195,16 @@ export default function ProjectsPage() {
 
   const pickFolder = async (setTarget: (path: string) => void) => {
     try {
-      const res = await fetch("http://127.0.0.1:8001/api/system/select-folder")
+      const qs = user?.id ? `?user_id=${user.id}` : ""
+      const useAgent = agentConnected
+      const res = await fetch(
+        useAgent
+          ? `http://127.0.0.1:8001/api/agent/select-folder${qs}`
+          : "http://127.0.0.1:8001/api/system/select-folder"
+      )
       const data = await res.json()
       if (data.path) setTarget(data.path)
+      else if (data.error) setError(data.error)
     } catch (e: any) {
       setError(e.message)
     }
@@ -519,6 +537,12 @@ export default function ProjectsPage() {
               <label className="text-sm font-medium mb-1 block">
                 Project Folder {newProject.mode === "prebuilt" ? <span className="text-red-400">*</span> : <span className="text-muted-foreground">(optional)</span>}
               </label>
+              {newProject.mode === "prebuilt" && agentConnected && agentFolder && (
+                <div className="mb-2 flex items-center gap-1.5 rounded-md bg-green-500/10 border border-green-500/20 px-2.5 py-1.5 text-xs text-green-400">
+                  <Monitor className="h-3.5 w-3.5" />
+                  Local Agent detected — your project folder is: <span className="font-mono">{agentFolder}</span>
+                </div>
+              )}
               <div className="flex gap-2">
                 <input value={newProject.folder} readOnly placeholder="Click Browse to select a folder..." className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono" />
                 <button onClick={() => pickFolder((path) => setNewProject((p) => ({ ...p, folder: path })))}

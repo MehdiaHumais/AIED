@@ -106,6 +106,10 @@ class AIEDLocalAgent:
                 r = await self._run_command(params)
             elif cmd_type == "read_tree":
                 r = self._read_tree(params)
+            elif cmd_type == "select_folder":
+                r = self.select_folder(params)
+            elif cmd_type == "list_root_folders":
+                r = self.list_root_folders(params)
             elif cmd_type == "ping":
                 r = {"success": True, "pong": True}
             else:
@@ -122,10 +126,14 @@ class AIEDLocalAgent:
 
     # --- Command Implementations ---
 
+    def _resolve_folder(self, params) -> str:
+        """Use the project_folder passed with the command, else the configured one."""
+        return params.get("project_folder") or self.cfg.get("project_folder", "")
+
     def _write_file(self, params):
         rel_path = params.get("path", "")
         content = params.get("content", "")
-        project = self.cfg.get("project_folder", "")
+        project = self._resolve_folder(params)
 
         if not project:
             return {"success": False, "error": "No project folder configured"}
@@ -145,7 +153,7 @@ class AIEDLocalAgent:
 
     def _delete_file(self, params):
         rel_path = params.get("path", "")
-        project = self.cfg.get("project_folder", "")
+        project = self._resolve_folder(params)
 
         if not project:
             return {"success": False, "error": "No project folder configured"}
@@ -167,7 +175,7 @@ class AIEDLocalAgent:
 
     def _read_file(self, params):
         rel_path = params.get("path", "")
-        project = self.cfg.get("project_folder", "")
+        project = self._resolve_folder(params)
 
         if not project:
             return {"success": False, "error": "No project folder configured"}
@@ -193,7 +201,7 @@ class AIEDLocalAgent:
         return {"success": True, "path": rel_path, "content": content, "size": size}
 
     def _list_files(self, params):
-        project = self.cfg.get("project_folder", "")
+        project = self._resolve_folder(params)
         if not project:
             return {"success": False, "error": "No project folder configured"}
 
@@ -235,7 +243,7 @@ class AIEDLocalAgent:
         return {"success": True, "path": sub_path, "entries": entries}
 
     def _read_tree(self, params):
-        project = self.cfg.get("project_folder", "")
+        project = self._resolve_folder(params)
         if not project:
             return {"success": False, "error": "No project folder configured"}
 
@@ -274,7 +282,7 @@ class AIEDLocalAgent:
 
     async def _run_command(self, params):
         command = params.get("command", "")
-        project = self.cfg.get("project_folder", "")
+        project = self._resolve_folder(params)
         timeout = min(params.get("timeout", 120), 600)
         cwd = project if project and os.path.isdir(project) else os.getcwd()
 
@@ -325,6 +333,51 @@ class AIEDLocalAgent:
                 "stdout": stdout_str,
                 "stderr": stderr_str,
             }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def select_folder(self, params):
+        """Open a native folder picker ON THIS MACHINE and return the selected path."""
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes('-topmost', True)
+            folder = filedialog.askdirectory(parent=root, title='Select Project Folder')
+            root.destroy()
+            if folder:
+                path = os.path.normpath(folder)
+                self.cfg["project_folder"] = path
+                config.save(self.cfg)
+                print(f"[AIED Agent] User selected folder: {path}")
+                return {"success": True, "path": path}
+            return {"success": False, "error": "No folder selected"}
+        except Exception as e:
+            return {"success": False, "error": f"Folder picker failed: {e}"}
+
+    def list_root_folders(self, params):
+        """List available drives/folders on THIS MACHINE so the dashboard can show them."""
+        try:
+            from pathlib import Path
+            result = []
+            if sys.platform == "win32":
+                import string
+                from ctypes import windll
+                drives = []
+                bitmask = windll.kernel32.GetLogicalDrives()
+                for letter in string.ascii_uppercase:
+                    if bitmask & 1:
+                        drives.append(f"{letter}:\\")
+                    bitmask >>= 1
+                for d in drives:
+                    result.append({"path": d, "label": d})
+            else:
+                root = Path("/")
+                for p in sorted(root.iterdir()):
+                    if p.is_dir():
+                        result.append({"path": str(p), "label": f"/{p.name}"})
+            return {"success": True, "entries": result}
         except Exception as e:
             return {"success": False, "error": str(e)}
 

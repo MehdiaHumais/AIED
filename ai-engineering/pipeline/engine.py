@@ -112,7 +112,7 @@ class PipelineTask:
     def __init__(self, task_id: str, project_id: str, title: str, description: str,
                  project_mode: str = "scratch", project_folder: str = "",
                  project_description: str = "", project_name: str = "",
-                 task_mode: str = "developer"):
+                 task_mode: str = "developer", user_id: str = ""):
         self.task_id = task_id
         self.project_id = project_id
         self.title = title
@@ -122,6 +122,7 @@ class PipelineTask:
         self.project_description = project_description
         self.project_name = project_name
         self.task_mode = task_mode  # "developer" or "tester"
+        self.user_id = user_id
         self.dev_package = ""
 
         self.stage = PipelineStage.IDLE
@@ -167,6 +168,7 @@ class PipelineTask:
             "project_description": self.project_description,
             "project_name": self.project_name,
             "task_mode": self.task_mode,
+            "user_id": self.user_id,
             "dev_package": self.dev_package,
             "prebuilt_action": self.prebuilt_action,
             "rejection_count": self.rejection_count,
@@ -207,6 +209,7 @@ def _load_from_dict(data: dict) -> PipelineTask:
         project_description=data.get("project_description", ""),
         project_name=data.get("project_name", ""),
         task_mode=data.get("task_mode", "developer"),
+        user_id=data.get("user_id", ""),
     )
     pt.dev_package = data.get("dev_package", "")
     try:
@@ -640,8 +643,110 @@ class Pipeline:
                 raise
         raise RuntimeError(f"Agent {agent_id} failed after {max_retries} retries")
 
-    def _write_files_to_disk(self, project_folder: str, files: list[dict]) -> list[dict]:
-        """Write extracted files to disk."""
+    def _get_agent_manager(self):
+        """Get the agent_manager from the FastAPI app state (if available)."""
+        try:
+            from apps.api.agent_server import agent_manager
+            return agent_manager
+        except ImportError:
+            return None
+
+    def _agent_connected(self, user_id: str) -> bool:
+        """Check if a Local Agent is connected for this user."""
+        if not user_id:
+            return False
+        mgr = self._get_agent_manager()
+        if mgr and mgr.is_connected(user_id):
+            return True
+        return False
+
+    async def _agent_write_files(self, user_id: str, project_folder: str, files: list[dict]) -> list[dict]:
+        """Write files through the Local Agent."""
+        mgr = self._get_agent_manager()
+        written = []
+        for f in files:
+            filename = self._sanitize_relative_path(f["filename"])
+            if not filename:
+                continue
+            if os.path.basename(filename).lower() in self.PROTECTED_BASENAMES:
+                logger.warning(f"Pipeline BLOCKED write to protected file: {filename}")
+                continue
+            if os.path.basename(filename).lower() in self.CONFIG_BASENAMES:
+                result = await mgr.read_file(user_id, filename, project_folder)
+                if result.get("success"):
+                    logger.warning(f"Pipeline BLOCKED overwrite of existing config file: {filename}")
+                    continue
+            result = await mgr.write_file(user_id, filename, f["content"], project_folder)
+            if result.get("success"):
+                written.append({"path": filename, "size": len(f["content"])})
+                logger.info(f"[LocalAgent] Wrote: {filename}")
+            else:
+                logger.error(f"[LocalAgent] Write failed: {filename}: {result.get('error')}")
+        return written
+
+    async def _agent_run_command(self, user_id: str, cmd: str, project_folder: str = "", timeout: int = 300) -> tuple[str, str, int]:
+        """Run a command through the Local Agent."""
+        mgr = self._get_agent_manager()
+        result = await mgr.run_command(user_id, cmd, timeout=timeout, project_folder=project_folder)
+        stdout = result.get("stdout", "")
+        stderr = result.get("stderr", "")
+        retcode = result.get("exit_code", -1)
+        return stdout, stderr, retcode
+
+    async def _agent_read_tree(self, user_id: str, project_folder: str = "") -> str:
+        """Read the project directory tree through the Local Agent."""
+        mgr = self._get_agent_manager()
+        result = await mgr.read_tree(user_id, project_folder)
+        return result.get("tree", "(agent not connected)")
+
+    async def _agent_read_files(self, user_id: str, max_files: int = 30, project_folder: str = "") -> dict:
+        """Read project files through the Local Agent.
+        Returns {files: [{path, content}], tree: str}
+        """
+        mgr = self._get_agent_manager()
+        tree_result = await mgr.read_tree(user_id, project_folder)
+        tree = tree_result.get("tree", "")
+
+        files_content = []
+        list_result = await mgr.list_files(user_id, "", project_folder)
+        if not list_result.get("success"):
+            return {"files": [], "tree": tree}
+
+        entries = list_result.get("entries", [])
+        count = 0
+        for entry in entries:
+            if count >= max_files:
+                break
+            if entry.get("type") == "file":
+                read_result = await mgr.read_file(user_id, entry["name"], project_folder)
+                if read_result.get("success"):
+                    files_content.append({
+                        "path": entry["name"],
+                        "content": read_result.get("content", ""),
+                    })
+                    count += 1
+
+        return {"files": files_content, "tree": tree}
+
+    async def _agent_delete_file(self, user_id: str, rel_path: str, project_folder: str = "") -> bool:
+        """Delete a file through the Local Agent."""
+        mgr = self._get_agent_manager()
+        result = await mgr.delete_file(user_id, rel_path, project_folder)
+        return result.get("success", False)
+
+    async def _run_cmd(self, cmd: str, cwd: str = "", timeout: int = 300, user_id: str = "") -> tuple[str, str, int]:
+        """Run a shell command, routing through Local Agent if connected."""
+        if user_id and self._agent_connected(user_id):
+            self._debug_log(f"Running via Local Agent: {cmd[:80]}")
+            return await self._agent_run_command(user_id, cmd, project_folder=cwd, timeout=timeout)
+        return await _run_command_tree_async(cmd, cwd, timeout)
+
+    async def _write_files_to_disk(self, project_folder: str, files: list[dict], user_id: str = "") -> list[dict]:
+        """Write extracted files to disk or through Local Agent."""
+        if user_id and self._agent_connected(user_id):
+            self._debug_log(f"Writing {len(files)} files via Local Agent for user {user_id[:8]}...")
+            return await self._agent_write_files(user_id, project_folder, files)
+
         written = []
         for f in files:
             filename = self._sanitize_relative_path(f["filename"])
@@ -664,7 +769,7 @@ class Pipeline:
                 logger.error(f"Pipeline write failed: {filepath}: {e}")
         return written
 
-    def _delete_files_from_response(self, text: str, project_folder: str) -> list[str]:
+    async def _delete_files_from_response(self, text: str, project_folder: str, user_id: str = "") -> list[str]:
         """Delete files that the agent explicitly marked for removal.
 
         The agent signals a file to remove with a line like:
@@ -675,8 +780,6 @@ class Pipeline:
         actually deleted from disk, instead of only being able to add files.
         """
         deleted = []
-        if not project_folder or not os.path.isdir(project_folder):
-            return deleted
         marker = re.compile(
             r'(?:^|\n)\s*(?:DELETE|DELETE_FILE|REMOVE)\s*[:\-]?\s*'
             r'([a-zA-Z0-9_\-\.\/\\:]+?\.[a-zA-Z0-9]+)\s*(?:\n|$)',
@@ -685,6 +788,14 @@ class Pipeline:
         for match in marker.finditer(text):
             rel = self._sanitize_relative_path(match.group(1).strip())
             if not rel:
+                continue
+            if user_id and self._agent_connected(user_id):
+                ok = await self._agent_delete_file(user_id, rel, project_folder)
+                if ok:
+                    deleted.append(rel)
+                    logger.info(f"[LocalAgent] Deleted: {rel}")
+                continue
+            if not project_folder or not os.path.isdir(project_folder):
                 continue
             path = self._resolve_write_path(project_folder, rel)
             if os.path.basename(path).lower() in self.PROTECTED_BASENAMES:
@@ -800,8 +911,10 @@ class Pipeline:
             pass
         return False
 
-    def _get_directory_tree(self, project_folder: str, max_depth: int = 4) -> str:
+    async def _get_directory_tree(self, project_folder: str, max_depth: int = 4, user_id: str = "") -> str:
         """Get a directory tree string so the agent knows the actual project structure."""
+        if user_id and self._agent_connected(user_id):
+            return await self._agent_read_tree(user_id, project_folder)
         if not project_folder or not os.path.isdir(project_folder):
             return "(No project folder)"
         skip_dirs = {"node_modules", ".git", "__pycache__", ".next", ".venv", "venv", "dist", "build", ".cache"}
@@ -825,16 +938,16 @@ class Pipeline:
                 lines.append(f"{indent}  {f}")
         return "\n".join(lines[:100])
 
-    def _read_project_files(self, project_folder: str, max_files: int = 30) -> str:
-        """Read source files from a project with BALANCED coverage.
-
-        Files are sampled round-robin across the whole tree (root entrypoints, app/,
-        src/, frontend/, backend/, ...) so the agent sees code from every major part of
-        the project - not just whichever directory sorts first. Secret files (.env*)
-        are NEVER included.
-
-        Max total output kept under 40KB to fit in LLM context windows.
-        """
+    async def _read_project_files(self, project_folder: str, max_files: int = 30, user_id: str = "") -> str:
+        """Read source files from a project with BALANCED coverage."""
+        if user_id and self._agent_connected(user_id):
+            result = await self._agent_read_files(user_id, max_files, project_folder)
+            tree = result.get("tree", "")
+            files = result.get("files", [])
+            parts = [f"--- Project Tree ---\n{tree}\n"]
+            for f in files:
+                parts.append(f"--- {f['path']} ---\n{f['content']}\n")
+            return "\n".join(parts) if parts else "(No files read)"
         if not project_folder or not os.path.isdir(project_folder):
             return "(No project folder found or folder does not exist)"
 
@@ -1102,10 +1215,10 @@ class Pipeline:
         except Exception as e:
             return f"(Error reading {filepath}: {e})"
 
-    def _read_error_context(self, project_folder: str, error_files: list[str], build_output: str) -> str:
+    async def _read_error_context(self, project_folder: str, error_files: list[str], build_output: str) -> str:
         """Read only the files referenced in build errors, with full content and line numbers."""
         if not error_files:
-            return self._read_project_files(project_folder)
+            return await self._read_project_files(project_folder)
 
         parts = []
         for fp in error_files:
@@ -1263,7 +1376,7 @@ class Pipeline:
         for cmd, cwd_root in install_cmds:
             results["tested"] = True
             try:
-                stdout_str, stderr_str, retcode = await _run_command_tree_async(cmd, cwd_root, timeout=300)
+                stdout_str, stderr_str, retcode = await self._run_cmd(cmd, cwd_root, timeout=300, user_id=task.user_id)
                 results["install_output"] += f"$ {cmd}\n{stdout_str}\n{stderr_str}\n"
                 results["commands_run"].append({"command": cmd, "returncode": retcode, "stderr": stderr_str[:2000]})
                 if retcode != 0:
@@ -1292,7 +1405,7 @@ class Pipeline:
                         install_cmd = "npm install --save-dev --legacy-peer-deps " + " ".join(sorted(missing_modules))
                         print(f"[PIPELINE] Auto-installing missing modules: {', '.join(sorted(missing_modules))}")
                         try:
-                            out_s, err_s, retcode = await _run_command_tree_async(install_cmd, root, timeout=300)
+                            out_s, err_s, retcode = await self._run_cmd(install_cmd, root, timeout=300, user_id=task.user_id)
                             results["tested"] = True
                             if retcode == 0:
                                 print(f"[PIPELINE] Auto-install succeeded: {install_cmd}")
@@ -1336,7 +1449,7 @@ class Pipeline:
             results["tested"] = True
             try:
                 timeout = 900 if "build" in cmd else 15
-                out_str, err_str, retcode = await _run_command_tree_async(cmd, cwd_root, timeout=timeout)
+                out_str, err_str, retcode = await self._run_cmd(cmd, cwd_root, timeout=timeout, user_id=task.user_id)
                 clean_out = ansi_escape.sub('', out_str)
                 clean_err = ansi_escape.sub('', err_str)
                 combined = (clean_out + clean_err)[:4000]
@@ -1362,12 +1475,12 @@ class Pipeline:
                         missing_mod = mod_match.group(1)
                         print(f"[PIPELINE] Command failed - missing module '{missing_mod}', auto-installing...")
                         try:
-                            _, fix_err, fix_ret = await _run_command_tree_async(
-                                f"npm install --legacy-peer-deps {missing_mod}", cwd_root, timeout=300
+                            _, fix_err, fix_ret = await self._run_cmd(
+                                f"npm install --legacy-peer-deps {missing_mod}", cwd_root, timeout=300, user_id=task.user_id
                             )
                             if fix_ret == 0:
                                 print(f"[PIPELINE] Installed '{missing_mod}', retrying...")
-                                r_out, r_err, retry_ret = await _run_command_tree_async(cmd, cwd_root, timeout=900)
+                                r_out, r_err, retry_ret = await self._run_cmd(cmd, cwd_root, timeout=900, user_id=task.user_id)
                                 r_combined = ansi_escape.sub('', (r_out + r_err))[:4000]
                                 if retry_ret == 0:
                                     results["run_output"] = f"$ {cmd} (after installing {missing_mod})\n{r_combined}"
@@ -2249,7 +2362,7 @@ export async function POST() {
         """After build passes, aggressively scan for ALL remaining issues: code review + runtime errors."""
         print(f"[PIPELINE] _verify_no_remaining_issues: task={task.title}")
 
-        project_files = self._read_project_files(task.project_folder)
+        project_files = await self._read_project_files(task.project_folder, user_id=task.user_id)
         if not project_files or len(project_files) < 10:
             return {"has_remaining_issues": False}
 
@@ -2860,10 +2973,10 @@ CRITICAL - THE PROJECT MUST BE INSTALLABLE AND RUNNABLE:
             fe_files = self._extract_files_from_response(frontend_result)
             be_files = self._extract_files_from_response(backend_result)
             if task.project_folder:
-                written_fe = self._write_files_to_disk(task.project_folder, fe_files)
+                written_fe = await self._write_files_to_disk(task.project_folder, fe_files, task.user_id)
                 task.files_written.extend(written_fe)
                 task.add_history("files_written", f"Wrote {len(written_fe)} frontend files to disk")
-                written_be = self._write_files_to_disk(task.project_folder, be_files)
+                written_be = await self._write_files_to_disk(task.project_folder, be_files, task.user_id)
                 task.files_written.extend(written_be)
                 task.add_history("files_written", f"Wrote {len(written_be)} backend files to disk")
                 if self._repair_scaffold(task):
@@ -2898,7 +3011,7 @@ CRITICAL - THE PROJECT MUST BE INSTALLABLE AND RUNNABLE:
                         task.commands_run.append({"command": cmd, "error": "skipped (dangerous/interactive)"})
                         continue
                     try:
-                        out_s, err_s, retcode = await _run_command_tree_async(cmd, task.project_folder, timeout=300)
+                        out_s, err_s, retcode = await self._run_cmd(cmd, task.project_folder, timeout=300, user_id=task.user_id)
                         if retcode == -1:
                             task.commands_run.append({"command": cmd, "error": "timed out"})
                             continue
@@ -2957,7 +3070,7 @@ CRITICAL - THE PROJECT MUST BE INSTALLABLE AND RUNNABLE:
                 auto_fixed = await asyncio.to_thread(self._auto_fix_known_errors, error_text, task.project_folder) if error_text else False
 
                 if not auto_fixed:
-                    project_files = self._read_project_files(task.project_folder)
+                    project_files = await self._read_project_files(task.project_folder, user_id=task.user_id)
                     try:
                         fix_result = await self._call_agent(
                             "backend-engineer",
@@ -2995,7 +3108,7 @@ command
                         # Write fixed files
                         fixed_files = self._extract_files_from_response(fix_result)
                         if task.project_folder:
-                            written = self._write_files_to_disk(task.project_folder, fixed_files)
+                            written = await self._write_files_to_disk(task.project_folder, fixed_files, task.user_id)
                             task.files_written.extend(written)
                             task.add_history("files_written", f"Auto-fix wrote {len(written)} files")
 
@@ -3003,7 +3116,7 @@ command
                         fix_cmds = self._extract_commands_from_response(fix_result)
                         for cmd in fix_cmds:
                             try:
-                                out_s, err_s, retcode = await _run_command_tree_async(cmd, task.project_folder, timeout=300)
+                                out_s, err_s, retcode = await self._run_cmd(cmd, task.project_folder, timeout=300, user_id=task.user_id)
                                 if retcode == -1:
                                     task.commands_run.append({"command": cmd, "error": "timed out"})
                                     continue
@@ -3223,7 +3336,7 @@ command
 
             all_files = self._extract_files_from_response(frontend_result) + self._extract_files_from_response(backend_result)
             if task.project_folder:
-                task.files_written = self._write_files_to_disk(task.project_folder, all_files)
+                task.files_written = await self._write_files_to_disk(task.project_folder, all_files, task.user_id)
                 if self._repair_scaffold(task):
                     task.add_history("scaffold_repaired", "Auto-repaired missing project scaffolding after rebuild")
                     print(f"[PIPELINE] Repaired project scaffolding in {task.project_folder} after rebuild")
@@ -3272,7 +3385,7 @@ Write deployment files and run deployment commands.""",
             task.deploy_output = deploy_result
             all_files = self._extract_files_from_response(deploy_result)
             if task.project_folder:
-                self._write_files_to_disk(task.project_folder, all_files)
+                await self._write_files_to_disk(task.project_folder, all_files, task.user_id)
 
             task.stage = PipelineStage.COMPLETED
             task.add_history("completed", "Project deployed successfully!")
@@ -3597,8 +3710,8 @@ CATEGORY: [category]""",
             self._add_notification("Pipeline Started", f"Analyzing '{task.title}'...", task.task_id, "info")
             print(f"[PIPELINE] prebuilt_pipeline START: {task.title}")
 
-            project_files = self._read_project_files(task.project_folder)
-            dir_tree = self._get_directory_tree(task.project_folder)
+            project_files = await self._read_project_files(task.project_folder, user_id=task.user_id)
+            dir_tree = await self._get_directory_tree(task.project_folder, user_id=task.user_id)
             self._debug_log(f"STEP 1: Read {len(project_files)} chars of files, dir_tree={len(dir_tree)} chars")
 
             self._debug_log(f"STEP 1: Calling code-reviewer agent...")
@@ -3691,7 +3804,7 @@ If everything is perfect, output: TODO: NONE""",
             self._add_notification("Step 3", "Deep code review for hidden bugs...", task.task_id, "info")
 
             # Re-read files in case step 2 changed anything
-            updated_files = self._read_project_files(task.project_folder)
+            updated_files = await self._read_project_files(task.project_folder, user_id=task.user_id)
             code_check_result = await self._call_agent(
                 "code-reviewer",
                 f"""DEEP CODE REVIEW - You are Step 3 of 5.
@@ -3792,8 +3905,8 @@ ASSIGN:
 
                         try:
                             self._debug_log(f"FIX ITEM {item_id}: reading project files...")
-                            project_context_files = self._read_project_files(task.project_folder, max_files=10)
-                            dir_tree = self._get_directory_tree(task.project_folder, max_depth=3)
+                            project_context_files = await self._read_project_files(task.project_folder, max_files=10, user_id=task.user_id)
+                            dir_tree = await self._get_directory_tree(task.project_folder, max_depth=3, user_id=task.user_id)
                             self._debug_log(f"FIX ITEM {item_id}: calling {agent_id} agent...")
 
                             bt = "```"
@@ -3859,7 +3972,7 @@ ASSIGN:
                                 self._debug_log(f"FIX ITEM {item_id}: SKIP - only {len(fix_result.strip())} chars, agent gave empty/error response")
 
                             if task.project_folder and fixed_files:
-                                written = self._write_files_to_disk(task.project_folder, fixed_files)
+                                written = await self._write_files_to_disk(task.project_folder, fixed_files, task.user_id)
                                 task.files_written.extend(written)
                                 for f in written:
                                     print(f"[PIPELINE]   Wrote: {f['path']}")
@@ -3868,11 +3981,11 @@ ASSIGN:
                             fix_cmds = self._extract_commands_from_response(fix_result)
                             for cmd in fix_cmds:
                                 try:
-                                    out_s, err_s, retcode = await _run_command_tree_async(cmd, task.project_folder, timeout=300)
+                                    out_s, err_s, retcode = await self._run_cmd(cmd, task.project_folder, timeout=300, user_id=task.user_id)
                                     if retcode == -1:
                                         task.commands_run.append({"command": cmd, "error": "timed out"})
-                                        continue
-                                    task.commands_run.append({"command": cmd, "returncode": retcode, "stderr": err_s[:2000]})
+                                    else:
+                                        task.commands_run.append({"command": cmd, "returncode": retcode, "stderr": err_s[:2000]})
                                 except Exception as e:
                                     task.commands_run.append({"command": cmd, "error": str(e)})
 
@@ -4134,7 +4247,7 @@ ASSIGN:
         """Analyze a pre-built project for issues."""
         task.stage = PipelineStage.ANALYZING
         task.add_history("analyzing", "Analyzing project for issues")
-        project_files = self._read_project_files(task.project_folder)
+        project_files = await self._read_project_files(task.project_folder, user_id=task.user_id)
         result = await self._call_agent("code-reviewer",
             f"ANALYZE THIS PROJECT:\n\nProject: {task.project_name}\nFolder: {task.project_folder}\n\nFILES:\n{project_files}\n\nList all issues with file paths.",
             context={"project_name": task.project_name, "project_folder": task.project_folder},
@@ -4153,7 +4266,7 @@ ASSIGN:
     async def _prebuilt_run_info(self, task: PipelineTask):
         """Get instructions on how to run the project."""
         task.stage = PipelineStage.ANALYZING
-        project_files = self._read_project_files(task.project_folder)
+        project_files = await self._read_project_files(task.project_folder, user_id=task.user_id)
         result = await self._call_agent("build-engineer",
             f"EXPLAIN HOW TO RUN THIS PROJECT:\n\nProject: {task.project_name}\nFolder: {task.project_folder}\n\nFILES:\n{project_files}\n\nProvide step-by-step run instructions.",
             context={"project_name": task.project_name, "project_folder": task.project_folder})
@@ -4289,7 +4402,7 @@ ASSIGN:
             for fp in extra_error_files:
                 if fp not in error_files:
                     error_files.append(fp)
-            error_context = self._read_error_context(task.project_folder, error_files, all_issues)
+            error_context = await self._read_error_context(task.project_folder, error_files, all_issues)
 
             # Smart analysis: figure out what the error actually means
             error_analysis = self._analyze_error(all_issues, task.project_folder)
@@ -4308,7 +4421,7 @@ ASSIGN:
             if len(error_context) > 150000:
                 error_context = error_context[:150000] + "\n\n...(context truncated to keep the prompt manageable)...\n"
 
-            project_tree = self._get_directory_tree(task.project_folder, max_depth=4)
+            project_tree = await self._get_directory_tree(task.project_folder, max_depth=4, user_id=task.user_id)
 
             fix_prompt = f"""You are a developer fixing a bug. Here is everything you need.
 
@@ -4395,7 +4508,7 @@ complete fixed file content
                     continue
 
             if task.project_folder and all_files:
-                task.files_written = self._write_files_to_disk(task.project_folder, all_files)
+                task.files_written = await self._write_files_to_disk(task.project_folder, all_files, task.user_id)
                 task.add_history("files_written", f"Developer wrote {len(all_files)} files")
                 for f in all_files:
                     print(f"[PIPELINE]   Wrote: {f['filename']} ({len(f['content'])} chars)")
@@ -4529,7 +4642,7 @@ complete fixed file content
     async def _verify_fixes(self, task: PipelineTask):
         """Verify that fixes resolved all issues."""
         try:
-            project_files = self._read_project_files(task.project_folder)
+            project_files = await self._read_project_files(task.project_folder, user_id=task.user_id)
 
             result = await self._call_agent(
                 "qa-engineer",
@@ -4691,7 +4804,7 @@ Output VERDICT: PASS or FAIL with details.""",
             for fp in extra_error_files:
                 if fp not in error_files:
                     error_files.append(fp)
-            error_context = self._read_error_context(task.project_folder, error_files, all_issues)
+            error_context = await self._read_error_context(task.project_folder, error_files, all_issues)
 
             issue_context = self._issue_relevant_files(task.project_folder, description or "")
             if issue_context:
@@ -4707,7 +4820,7 @@ Output VERDICT: PASS or FAIL with details.""",
             # If the same error keeps repeating, tell the agent to change approach
             adaptive_note = self._build_adaptive_note(all_issues, last_errors, prev_written)
 
-            project_tree = self._get_directory_tree(task.project_folder, max_depth=4)
+            project_tree = await self._get_directory_tree(task.project_folder, max_depth=4, user_id=task.user_id)
 
             # Do we have a genuine build failure, or did the build pass and the user
             # simply reported something (e.g. a pasted runtime error)?
@@ -4804,13 +4917,13 @@ complete fixed file content
                     continue
 
             if task.project_folder and all_files:
-                task.files_written = self._write_files_to_disk(task.project_folder, all_files)
+                task.files_written = await self._write_files_to_disk(task.project_folder, all_files, task.user_id)
                 task.add_history("files_written", f"Developer wrote {len(all_files)} files")
                 for f in all_files:
                     print(f"[PIPELINE]   Wrote: {f['filename']} ({len(f['content'])} chars)")
                     prev_written.append(f)
                 prev_written = prev_written[-12:]
-                deleted = self._delete_files_from_response(result, task.project_folder)
+                deleted = await self._delete_files_from_response(result, task.project_folder, task.user_id)
                 if deleted:
                     task.add_history("files_deleted", f"Developer deleted {len(deleted)} files: {', '.join(deleted)}")
                     print(f"[PIPELINE]   Deleted: {', '.join(deleted)}")

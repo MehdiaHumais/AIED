@@ -1,0 +1,44 @@
+{
+  "name": "aied-desktop",
+  "version": "1.0.0",
+  "description": "AIED Desktop - connects your AI Engineering Department to your PC",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "dist": "electron-builder"
+  },
+  "build": {
+    "appId": "com.aied.desktop",
+    "productName": "AIED Desktop",
+    "files": [
+      "main.js",
+      "preload.js",
+      "agent.js",
+      "config.js"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

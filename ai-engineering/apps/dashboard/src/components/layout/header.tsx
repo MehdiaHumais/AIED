@@ -1,6 +1,6 @@
 "use client"
 
-import { Bell, Search, X, Sun, Moon, LogOut, Shield } from "lucide-react"
+import { Bell, Search, X, Sun, Moon, LogOut, Shield, Monitor } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useEffect, useState, useRef } from "react"
 import { useTheme } from "@/components/theme-provider"
@@ -21,6 +21,8 @@ export function Header() {
   const { user, logout } = useAuth()
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [showNotifs, setShowNotifs] = useState(false)
+  const [agentConnected, setAgentConnected] = useState(false)
+  const [agentFolder, setAgentFolder] = useState("")
   const notifRef = useRef<HTMLDivElement>(null)
   const pollRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -42,7 +44,16 @@ export function Header() {
     if (!user) return
     fetchNotifs()
     pollRef.current = setInterval(fetchNotifs, 5000)
-    return () => { if (pollRef.current) clearInterval(pollRef.current) }
+    const agentPoll = setInterval(() => {
+      fetch(`http://127.0.0.1:8001/api/agent/status?user_id=${user.id}`)
+        .then(r => r.json())
+        .then(d => {
+          setAgentConnected(d.connected || false)
+          setAgentFolder(d.project_folder || "")
+        })
+        .catch(() => setAgentConnected(false))
+    }, 5000)
+    return () => { if (pollRef.current) clearInterval(pollRef.current); clearInterval(agentPoll) }
   }, [user?.id])
 
   useEffect(() => {
@@ -150,6 +161,11 @@ export function Header() {
               )}
             </div>
           )}
+        </div>
+        <div className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5" title={agentConnected ? `Agent connected — ${agentFolder || "folder set"}` : "Agent disconnected"}>
+          <span className={`h-2 w-2 rounded-full ${agentConnected ? "bg-green-500 animate-pulse" : "bg-zinc-500"}`} />
+          <Monitor className="h-4 w-4 text-muted-foreground" />
+          <span className="text-[11px] text-muted-foreground">{agentConnected ? "Local Agent" : "No Agent"}</span>
         </div>
         <button onClick={toggle} className="rounded-lg p-2 hover:bg-secondary transition-colors" title="Toggle theme">
           {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
