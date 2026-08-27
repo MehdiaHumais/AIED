@@ -505,7 +505,7 @@ export default function ProjectsPage() {
                   className={`rounded-lg border-2 p-4 text-left transition-all ${newProject.mode === "prebuilt"
                     ? "border-primary bg-primary/10"
                     : "border-border bg-background hover:border-border/80"}`}>
-                  <div className="font-semibold text-sm mb-1">Work on Existing</div>
+                  <div className="font-semibold text-sm mb-1">Prebuilt</div>
                   <div className="text-xs text-muted-foreground">Agent analyzes your existing codebase and makes changes</div>
                 </button>
               </div>
