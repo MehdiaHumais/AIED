@@ -130,7 +130,7 @@ export default function ProjectsPage() {
   const [editPriority, setEditPriority] = useState("medium")
   const [prebuiltDesc, setPrebuiltDesc] = useState("")
 
-  const [newProject, setNewProject] = useState({ name: "", codename: "", description: "", tech_stack: "", folder: "" })
+  const [newProject, setNewProject] = useState({ name: "", codename: "", description: "", tech_stack: "", folder: "", mode: "scratch" })
   const [newTask, setNewTask] = useState({ title: "", description: "", priority: "medium", project_id: "", task_mode: "developer" })
 
   const fetchData = () => {
@@ -194,6 +194,10 @@ export default function ProjectsPage() {
 
   const createProject = async () => {
     if (!newProject.name || !newProject.codename) return
+    if (newProject.mode === "prebuilt" && !newProject.folder) {
+      setError("Prebuilt mode requires a project folder. Please browse and select your existing project folder.")
+      return
+    }
     setCreating(true)
     setError("")
     try {
@@ -206,6 +210,7 @@ export default function ProjectsPage() {
           description: newProject.description,
           tech_stack: newProject.tech_stack.split(",").map((s) => s.trim()).filter(Boolean),
           user_id: user?.id || "",
+          mode: newProject.mode,
         }),
       })
       const data = await res.json()
@@ -217,7 +222,14 @@ export default function ProjectsPage() {
             body: JSON.stringify({ folder: newProject.folder }),
           })
         }
-        setNewProject({ name: "", codename: "", description: "", tech_stack: "", folder: "" })
+        if (newProject.mode) {
+          await fetch(`http://127.0.0.1:8001/api/projects/${data.project.id}/set-mode`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mode: newProject.mode }),
+          })
+        }
+        setNewProject({ name: "", codename: "", description: "", tech_stack: "", folder: "", mode: "scratch" })
         setShowCreateProject(false)
         fetchData()
       }
@@ -478,12 +490,35 @@ export default function ProjectsPage() {
             <textarea placeholder="Description -- what this project does, what you want built..." value={newProject.description}
               onChange={(e) => setNewProject({ ...newProject, description: e.target.value })}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm h-24 resize-none" />
+
+            <div>
+              <label className="text-sm font-medium mb-2 block">Project Mode</label>
+              <div className="grid grid-cols-2 gap-3">
+                <button onClick={() => setNewProject({ ...newProject, mode: "scratch" })}
+                  className={`rounded-lg border-2 p-4 text-left transition-all ${newProject.mode === "scratch"
+                    ? "border-primary bg-primary/10"
+                    : "border-border bg-background hover:border-border/80"}`}>
+                  <div className="font-semibold text-sm mb-1">Build from Scratch</div>
+                  <div className="text-xs text-muted-foreground">Agent creates a brand new project from your description</div>
+                </button>
+                <button onClick={() => setNewProject({ ...newProject, mode: "prebuilt" })}
+                  className={`rounded-lg border-2 p-4 text-left transition-all ${newProject.mode === "prebuilt"
+                    ? "border-primary bg-primary/10"
+                    : "border-border bg-background hover:border-border/80"}`}>
+                  <div className="font-semibold text-sm mb-1">Work on Existing</div>
+                  <div className="text-xs text-muted-foreground">Agent analyzes your existing codebase and makes changes</div>
+                </button>
+              </div>
+            </div>
+
             <input placeholder="Tech stack (comma separated): react, nextjs, tailwind" value={newProject.tech_stack}
               onChange={(e) => setNewProject({ ...newProject, tech_stack: e.target.value })}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
 
             <div>
-              <label className="text-sm font-medium mb-1 block">Project Folder</label>
+              <label className="text-sm font-medium mb-1 block">
+                Project Folder {newProject.mode === "prebuilt" ? <span className="text-red-400">*</span> : <span className="text-muted-foreground">(optional)</span>}
+              </label>
               <div className="flex gap-2">
                 <input value={newProject.folder} readOnly placeholder="Click Browse to select a folder..." className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono" />
                 <button onClick={() => pickFolder((path) => setNewProject((p) => ({ ...p, folder: path })))}
@@ -495,7 +530,7 @@ export default function ProjectsPage() {
               <button onClick={() => setShowCreateProject(false)} className="rounded-lg bg-secondary px-4 py-2 text-sm">Cancel</button>
               <button onClick={createProject} disabled={creating || !newProject.name}
                 className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-50">
-                {creating ? "Creating..." : "Create Project"}
+                {creating ? "Creating..." : newProject.mode === "prebuilt" ? "Create & Analyze Project" : "Create Project"}
               </button>
             </div>
           </div>

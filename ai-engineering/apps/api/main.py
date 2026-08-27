@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import socket
 import sys
+import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Optional
 
@@ -28,7 +30,7 @@ socket.getaddrinfo = _ipv4_getaddrinfo
 # Force unverified SSL context globally to bypass certificate expiration/clock sync errors
 import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
-from fastapi import FastAPI, File, Form, UploadFile, Body
+from fastapi import FastAPI, File, Form, UploadFile, Body, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -38,6 +40,7 @@ from agents.openclaw.engine import OpenClawEngine
 from llms.manager import LLMManager
 from pipeline.engine import Pipeline
 from memory.postgres.database import MemoryStore
+from apps.api.agent_server import agent_manager
 from memory.redis.queue import RedisStore
 from shared.config import config
 
@@ -923,6 +926,86 @@ async def system_select_folder():
         return {"path": folder_path}
     except Exception as e:
         return {"error": str(e), "path": ""}
+
+
+# --- Local Agent WebSocket ---
+
+@app.websocket("/ws/agent")
+async def websocket_agent(ws: WebSocket, token: str = "", user_id: str = ""):
+    from starlette.websockets import WebSocketState
+
+    actual_token = ws.headers.get("x-agent-token", token)
+    actual_user_id = ws.headers.get("x-user-id", user_id)
+
+    if not actual_token or not actual_user_id:
+        await ws.close(code=4001, reason="Missing token or user_id")
+        return
+
+    await ws.accept()
+    agent = agent_manager.connect(actual_user_id, ws, actual_token)
+    try:
+        while True:
+            raw = await ws.receive_text()
+            try:
+                msg = json.loads(raw)
+                agent_manager.handle_message(actual_user_id, msg)
+            except json.JSONDecodeError:
+                pass
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        agent_manager.disconnect(actual_user_id)
+
+
+@app.get("/api/agent/status")
+async def agent_status(user_id: str = ""):
+    if user_id:
+        agent = agent_manager.get_agent(user_id)
+        if agent:
+            return {"connected": True, **agent.to_dict()}
+        return {"connected": False, "user_id": user_id}
+    return {"agents": agent_manager.get_all_status()}
+
+
+@app.post("/api/agent/register")
+async def agent_register(data: dict):
+    user_id = data.get("user_id", "")
+    if not user_id:
+        return {"error": "user_id required"}
+    token = f"aied-{user_id[:8]}-{uuid.uuid4().hex[:16]}"
+    agent_manager.register_token(token, user_id)
+    return {"token": token, "user_id": user_id}
+
+
+@app.post("/api/agent/update-folder")
+async def agent_update_folder(data: dict):
+    user_id = data.get("user_id", "")
+    folder = data.get("folder", "")
+    if not user_id:
+        return {"error": "user_id required"}
+    result = await agent_manager.update_project_folder(user_id, folder)
+    return result
+
+
+@app.post("/api/agent/command/{user_id}/{command}")
+async def agent_command(user_id: str, command: str, data: dict):
+    if command == "write_file":
+        return await agent_manager.write_file(user_id, data.get("path", ""), data.get("content", ""))
+    elif command == "delete_file":
+        return await agent_manager.delete_file(user_id, data.get("path", ""))
+    elif command == "read_file":
+        return await agent_manager.read_file(user_id, data.get("path", ""))
+    elif command == "list_files":
+        return await agent_manager.list_files(user_id, data.get("path", ""))
+    elif command == "read_tree":
+        return await agent_manager.read_tree(user_id)
+    elif command == "run_command":
+        return await agent_manager.run_command(user_id, data.get("command", ""), data.get("timeout", 120), data.get("env"))
+    else:
+        return {"error": f"Unknown command: {command}"}
+
 
 # --- Pipeline ---
 
