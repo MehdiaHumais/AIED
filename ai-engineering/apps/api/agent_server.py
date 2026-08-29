@@ -65,6 +65,18 @@ class AgentConnection:
         if future and not future.done():
             future.set_result(result)
 
+    async def notify(self, title: str, body: str, level: str = "info"):
+        """Push a desktop notification to this agent's PC. Fire-and-forget."""
+        try:
+            await self.ws.send_json({
+                "type": "notify",
+                "title": title,
+                "body": body,
+                "level": level,
+            })
+        except Exception:
+            pass
+
     def to_dict(self) -> dict:
         return {
             "user_id": self.user_id,
@@ -194,6 +206,14 @@ class AgentManager:
         if not agent:
             return {"success": False, "error": "Local Agent not connected"}
         return await agent.send_command("list_root_folders", {}, timeout=30)
+
+    async def notify(self, user_id: str, title: str, body: str, level: str = "info"):
+        """Push a desktop notification to the user's Local Agent PC."""
+        agent = self.get_agent(user_id)
+        if not agent:
+            return False
+        await agent.notify(title, body, level)
+        return True
 
     def handle_message(self, user_id: str, msg: dict):
         msg_type = msg.get("type", "")

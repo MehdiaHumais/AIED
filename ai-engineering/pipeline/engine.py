@@ -304,7 +304,7 @@ class Pipeline:
         except Exception:
             pass
 
-    def _spawn_task(self, coro, task_id: str = ""):
+    def _spawn_task(self, coro, task_id: str = "", user_id: str = "", label: str = ""):
         """Create a background task that won't be garbage collected."""
         self._debug_log(f"SPAWN task_id={task_id}")
         task = asyncio.create_task(coro)
@@ -316,16 +316,35 @@ class Pipeline:
             if t.cancelled():
                 self._debug_log(f"Background task CANCELLED task_id={task_id}")
                 print(f"[PIPELINE] Background task CANCELLED")
+                if user_id:
+                    asyncio.create_task(self._send_desktop_notification(
+                        user_id, "Task Cancelled", f"{label} was cancelled.", "error"))
             elif t.exception():
                 import traceback
                 tb = ''.join(traceback.format_exception(type(t.exception()), t.exception(), t.exception().__traceback__))
                 self._debug_log(f"Background task CRASHED task_id={task_id}: {t.exception()}\n{tb}")
                 print(f"[PIPELINE] Background task CRASHED: {t.exception()}")
                 traceback.print_exception(type(t.exception()), t.exception(), t.exception().__traceback__)
+                if user_id:
+                    asyncio.create_task(self._send_desktop_notification(
+                        user_id, "Task Failed", f"{label} hit an error: {str(t.exception())[:160]}", "error"))
+                    self._add_notification(f"Task Failed: {label}", str(t.exception())[:300], task_id=task_id, notif_type="error", user_id=user_id)
             else:
                 self._debug_log(f"Background task COMPLETED task_id={task_id}")
+                if user_id and label:
+                    asyncio.create_task(self._send_desktop_notification(
+                        user_id, "Task Completed", f"{label} is done.", "success"))
         task.add_done_callback(_on_done)
         return task
+
+    async def _send_desktop_notification(self, user_id: str, title: str, body: str, level: str = "info"):
+        """Push a native desktop notification via the user's Local Agent (if connected)."""
+        try:
+            mgr = self._get_agent_manager()
+            if mgr:
+                await mgr.notify(user_id, title, body, level)
+        except Exception as e:
+            self._debug_log(f"Desktop notification failed: {e}")
 
     def _persist(self):
         os.makedirs(DATA_DIR, exist_ok=True)
@@ -2637,7 +2656,7 @@ and every broken implementation is a real issue.""",
                     f"Implementation plan for '{task.title}' complete & validated. Auto-proceeding to Building layer...",
                     task_id
                 )
-                self._spawn_task(self._run_building(task))
+                self._spawn_task(self._run_building(task), task.task_id, task.user_id, f"Build: {task.title}")
             else:
                 task.stage = PipelineStage.FAILED
                 task.current_agent = ""
@@ -2850,7 +2869,7 @@ and every broken implementation is a real issue.""",
         task.add_history("building", "Building started")
         self._add_notification("Building Started", f"Frontend and Backend agents are now building: {task.title}", task_id)
 
-        self._spawn_task(self._run_building(task))
+        self._spawn_task(self._run_building(task), task.task_id, task.user_id, f"Build: {task.title}")
 
     async def reject_plan(self, task_id: str, feedback: str = ""):
         """Mehdia rejects the plan — redo."""
@@ -2864,7 +2883,7 @@ and every broken implementation is a real issue.""",
         task.add_history("planning", f"Plan rejected (#{task.rejection_count}). Re-doing with feedback: {feedback}")
         self._add_notification("Plan Rejected", f"Re-creating plan with your feedback.", task_id)
 
-        self._spawn_task(self._replan_with_feedback(task, feedback))
+        self._spawn_task(self._replan_with_feedback(task, feedback), task.task_id, task.user_id, f"Re-plan: {task.title}")
 
     async def _replan_with_feedback(self, task: PipelineTask, feedback: str):
         try:
@@ -3029,7 +3048,7 @@ CRITICAL - THE PROJECT MUST BE INSTALLABLE AND RUNNABLE:
             task.add_history("checking", "Checker agent validating build")
             self._add_notification("Validation Started", "Checker agent is validating the build.", task.task_id)
 
-            self._spawn_task(self._run_checking(task))
+            self._spawn_task(self._run_checking(task), task.task_id, task.user_id, f"Code review: {task.title}")
 
         except Exception as e:
             print(f"[PIPELINE] BUILD FAILED: {e}")
@@ -3168,7 +3187,7 @@ command
                     task.current_action = ""
                     task.add_history("building", f"Incomplete project, re-building (attempt #{task.rejection_count}).")
                     self._add_notification("Build Needs Fixes", "Project is incomplete. Re-building...", task.task_id)
-                    self._spawn_task(self._rerun_building(task, completeness_issue))
+                    self._spawn_task(self._rerun_building(task, completeness_issue), task.task_id, task.user_id, f"Rework: {task.title}")
                 self._persist()
                 return
 
@@ -3186,7 +3205,7 @@ command
                     f"The build for '{task.title}' passed all checks. Auto-proceeding to Deployment...",
                     task.task_id
                 )
-                self._spawn_task(self.approve_for_deploy(task.task_id))
+                self._spawn_task(self.approve_for_deploy(task.task_id), task.task_id, task.user_id, f"Deploy: {task.title}")
             elif has_files and test_results.get("tested") and not test_results.get("errors"):
                 # A real test ran and produced no errors (e.g. deps installed but
                 # no runnable start command was found). Honest pass - BUT if this is
@@ -3217,7 +3236,7 @@ command
                         task.current_action = ""
                         task.add_history("building", f"Web app missing scaffolding, re-building (attempt #{task.rejection_count}).")
                         self._add_notification("Build Needs Fixes", "Web app missing package.json. Re-building...", task.task_id)
-                        self._spawn_task(self._rerun_building(task, error_msg))
+                        self._spawn_task(self._rerun_building(task, error_msg), task.task_id, task.user_id, f"Fix build: {task.title}")
                 else:
                     print(f"[PIPELINE] Has files + tested + no errors => auto-approving and auto-deploying")
                     task.check_output = "Dependencies installed and no errors found. Auto-approved."
@@ -3231,7 +3250,7 @@ command
                         f"The build for '{task.title}' passed all checks. Auto-proceeding to Deployment...",
                         task.task_id
                     )
-                    self._spawn_task(self.approve_for_deploy(task.task_id))
+                    self._spawn_task(self.approve_for_deploy(task.task_id), task.task_id, task.user_id, f"Deploy: {task.title}")
             elif has_files and not test_results.get("tested"):
                 # FILES WERE GENERATED BUT THE PROJECT WAS NEVER TESTED.
                 # Do NOT fake-approve - send back to the builder with a clear error.
@@ -3257,7 +3276,7 @@ command
                     task.current_action = ""
                     task.add_history("building", f"Build had no runnable project, re-building (attempt #{task.rejection_count}).")
                     self._add_notification("Build Needs Fixes", "Files generated but the project could not be built or tested. Re-building...", task.task_id)
-                    self._spawn_task(self._rerun_building(task, error_msg))
+                    self._spawn_task(self._rerun_building(task, error_msg), task.task_id, task.user_id, f"Fix build: {task.title}")
             else:
                 # BUILD FAILED after auto-fix attempts
                 task.rejection_count += 1
@@ -3275,7 +3294,7 @@ command
                     task.current_action = ""
                     task.add_history("building", f"Build had errors, re-building (attempt #{task.rejection_count}).")
                     self._add_notification("Build Needs Fixes", f"Found errors. Re-building (attempt #{task.rejection_count}).", task.task_id)
-                    self._spawn_task(self._rerun_building(task, remaining_errors))
+                    self._spawn_task(self._rerun_building(task, remaining_errors), task.task_id, task.user_id, f"Fix remaining errors: {task.title}")
 
             self._persist()
 
@@ -3325,10 +3344,12 @@ command
                     return f"// {agent_id} rebuild error: {err_msg}"
 
             frontend_task = self._spawn_task(
-                _run_rebuild_agent_safe("frontend-engineer", f"FIX/REBUILD THE FRONTEND:\n\n{build_context}")
+                _run_rebuild_agent_safe("frontend-engineer", f"FIX/REBUILD THE FRONTEND:\n\n{build_context}"),
+                task.task_id, task.user_id, "Frontend rebuild"
             )
             backend_task = self._spawn_task(
-                _run_rebuild_agent_safe("backend-engineer", f"FIX/REBUILD THE BACKEND:\n\n{build_context}")
+                _run_rebuild_agent_safe("backend-engineer", f"FIX/REBUILD THE BACKEND:\n\n{build_context}"),
+                task.task_id, task.user_id, "Backend rebuild"
             )
 
             frontend_result, backend_result = await asyncio.gather(frontend_task, backend_task)
@@ -3343,7 +3364,7 @@ command
 
             task.stage = PipelineStage.CHECKING
             task.add_history("checking", "Re-validating build")
-            self._spawn_task(self._run_checking(task))
+            self._spawn_task(self._run_checking(task), task.task_id, task.user_id, f"Code review: {task.title}")
 
         except Exception as e:
             task.stage = PipelineStage.FAILED
@@ -3680,7 +3701,7 @@ CATEGORY: [category]""",
             self._add_notification("Project Folder Missing", task.error, task.task_id, "error")
             return
 
-        self._spawn_task(self._run_prebuilt_pipeline(task), task.task_id)
+        self._spawn_task(self._run_prebuilt_pipeline(task), task.task_id, task.user_id, f"Project work: {task.title}")
 
     async def _run_prebuilt_pipeline(self, task: PipelineTask):
         """Full automatic multi-agent pipeline for prebuilt projects.
@@ -4211,9 +4232,9 @@ ASSIGN:
         print(f"[PIPELINE] restart_pipeline from Layer 1 for {task_id} ({task.title})")
 
         if task.project_mode == "prebuilt":
-            self._spawn_task(self._run_prebuilt_pipeline(task), task.task_id)
+            self._spawn_task(self._run_prebuilt_pipeline(task), task.task_id, task.user_id, f"Project work: {task.title}")
         else:
-            self._spawn_task(self.start_building(task.task_id), task.task_id)
+            self._spawn_task(self.start_building(task.task_id), task.task_id, task.user_id, f"Build: {task.title}")
         return True
 
     # Keep old methods for backward compatibility
@@ -4224,7 +4245,7 @@ ASSIGN:
         if not task or task.stage != PipelineStage.AWAITING_PREBUILT_ACTION:
             return
         task.prebuilt_action = action
-        self._spawn_task(self._run_prebuilt_action(task, action, description), task.task_id)
+        self._spawn_task(self._run_prebuilt_action(task, action, description), task.task_id, task.user_id, f"{action}: {task.title}")
 
     async def _run_prebuilt_action(self, task: PipelineTask, action: str, description: str = ""):
         """Execute a pre-built project action."""
@@ -4700,7 +4721,7 @@ Output VERDICT: PASS or FAIL with details.""",
         })
         task.add_history(task.stage.value, f"User submitted issue: {description[:100]}")
         self._add_notification("Issue Submitted", f"Fixing your issue for '{task.title}'...", task.task_id, "info")
-        self._spawn_task(self._fix_submitted_issue(task, description), task.task_id)
+        self._spawn_task(self._fix_submitted_issue(task, description), task.task_id, task.user_id, f"Fix issue: {task.title}")
         return True
 
     async def _fix_submitted_issue(self, task: PipelineTask, description: str):

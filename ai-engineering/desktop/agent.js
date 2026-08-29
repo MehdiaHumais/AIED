@@ -15,6 +15,7 @@ class LocalAgent {
     this.running = false;
     this.onStatusChange = opts.onStatusChange || (() => {});
     this.onLog = opts.onLog || (() => {});
+    this.onNotify = opts.onNotify || (() => {});
   }
 
   log(msg) {
@@ -64,6 +65,8 @@ class LocalAgent {
           const msg = JSON.parse(data.toString());
           if (msg.type === "command") {
             this.handleCommand(msg);
+          } else if (msg.type === "notify") {
+            this.handleNotify(msg);
           } else if (msg.type === "ping") {
             this.ws.send(JSON.stringify({ type: "pong", ts: Date.now() / 1000 }));
           } else if (msg.type === "config_update") {
@@ -419,6 +422,18 @@ class LocalAgent {
     if (updates.token) {
       this.cfg.token = updates.token;
       config.save(this.cfg);
+    }
+  }
+
+  handleNotify(msg) {
+    try {
+      this.onNotify({
+        title: msg.title || "AIED",
+        body: msg.body || "",
+        level: msg.level || "info",
+      });
+    } catch (e) {
+      this.log(`Notification failed: ${e.message}`);
     }
   }
 }

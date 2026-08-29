@@ -78,7 +78,9 @@ export default function LandingPage() {
     )
   }
 
-  if (user) return null
+  // If logged in, we redirect to the dashboard, but keep the nav showing
+  // the user profile + Dashboard button just in case the redirect isn't instant.
+  const loggedInUser = user ? user : null
 
   return (
     <div className="min-h-screen bg-background">
@@ -98,12 +100,28 @@ export default function LandingPage() {
             <button onClick={toggle} className="rounded-lg p-2 hover:bg-secondary transition-colors">
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </button>
-            <Link href="/login" className="rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
-              Sign In
-            </Link>
-            <Link href="/signup" className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity">
-              Get Started
-            </Link>
+            {loggedInUser ? (
+              <>
+                <span className="flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-3 py-2 text-sm">
+                  <span className="h-6 w-6 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center">
+                    {(loggedInUser.name || "U").charAt(0).toUpperCase()}
+                  </span>
+                  <span className="font-medium">{loggedInUser.name}</span>
+                </span>
+                <Link href="/dashboard" className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity">
+                  Dashboard
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link href="/login" className="rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                  Sign In
+                </Link>
+                <Link href="/signup" className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity">
+                  Get Started
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </nav>

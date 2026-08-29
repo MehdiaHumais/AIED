@@ -1,5 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell, Tray, nativeImage } = require("electron");
 const path = require("path");
+const fs = require("fs");
+const { spawn } = require("child_process");
 const config = require("./config");
 const { LocalAgent } = require("./agent");
 
@@ -9,21 +11,103 @@ let agent = null;
 let monitoring = false;
 let lastToken = null;
 
-function apiBase(cfg) {
-  // When the dashboard is local, API is local too. When remote (VPS), API is on the VPS.
-  try {
-    const target = new URL(cfg.dashboard_url || "http://localhost:5000").origin;
-    if (/localhost|127\.0\.0\.1|::1/.test(target)) return "http://127.0.0.1:8001";
-  } catch (e) {}
-  try {
-    return new URL(cfg.vps_url || "http://77.237.239.69:8001").origin;
-  } catch (e) {
-    return "http://77.237.239.69:8001";
+// Resolved at startup: "local" = backend on this machine, "remote" = configured VPS/production.
+let appMode = "remote";
+let apiBaseUrl = "http://127.0.0.1:8001";
+let dashboardUrl = "http://localhost:5000";
+
+const PYTHON_CANDIDATES = [
+  "C:\\Users\\Digital\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+  "C:\\Users\\Digital\\AppData\\Local\\Programs\\Python\\Python312\\python.exe",
+  "python",
+  "py",
+];
+
+function repoRoot() {
+  // Desktop lives at <repo>/apps/../desktop? No: <repo>/ai-engineering/desktop -> repo root is parent.
+  return path.resolve(__dirname, "..");
+}
+
+function isUrlUp(url, ms = 2500) {
+  return new Promise((resolve) => {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), ms);
+    fetch(url, { signal: ctrl.signal })
+      .then((r) => resolve(r.status < 500))
+      .catch(() => resolve(false))
+      .finally(() => clearTimeout(t));
+  });
+}
+
+// ---- Local backend auto-start (used on the owner/developer machine) ----
+
+function hasLocalRepo() {
+  const p = path.join(repoRoot(), "apps", "api", "main.py");
+  return fs.existsSync(p);
+}
+
+async function startLocalBackend() {
+  if (!hasLocalRepo()) return;
+  const root = repoRoot();
+  const found = PYTHON_CANDIDATES.find((c) => {
+    try { fs.accessSync(c); return true; } catch { return false; }
+  });
+  if (found) {
+    try {
+      spawn(found, ["-m", "apps.api.main"], { cwd: root, detached: true, stdio: "ignore", windowsHide: true }).unref();
+    } catch (e) { log("Auto-start API failed: " + e.message); }
+  } else {
+    log("Python not found - local API not started.");
+  }
+  // Start dashboard dev server (Next.js)
+  const dashDir = path.join(root, "apps", "dashboard");
+  if (fs.existsSync(path.join(dashDir, "package.json"))) {
+    try {
+      spawn("cmd", ["/c", "npm run dev"], { cwd: dashDir, detached: true, stdio: "ignore", windowsHide: true }).unref();
+    } catch (e) { log("Auto-start dashboard failed: " + e.message); }
   }
 }
 
-function createMainWindow() {
+async function resolveStartupMode() {
   const cfg = config.load();
+
+  // 1. Local backend already running?
+  if (await isUrlUp("http://127.0.0.1:8001/api/agents")) {
+    appMode = "local";
+    apiBaseUrl = "http://127.0.0.1:8001";
+    dashboardUrl = "http://localhost:5000";
+    return;
+  }
+
+  // 2. This machine has the repo - try to boot the local backend (owner/dev flow).
+  if (hasLocalRepo()) {
+    log("Local backend not running - starting it...");
+    await startLocalBackend();
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 1500));
+      if (await isUrlUp("http://127.0.0.1:8001/api/agents")) {
+        appMode = "local";
+        apiBaseUrl = "http://127.0.0.1:8001";
+        dashboardUrl = "http://localhost:5000";
+        log("Local backend is up.");
+        return;
+      }
+    }
+    log("Local backend could not be started - falling back to configured server.");
+  }
+
+  // 3. Use configured production/VPS URLs (end users).
+  appMode = "remote";
+  apiBaseUrl = (cfg.vps_url || "http://77.237.239.69:8001").replace(/\/$/, "");
+  dashboardUrl = cfg.dashboard_url || "http://localhost:5000";
+  const ok = await isUrlUp(apiBaseUrl + "/api/agents");
+  log(`Configured server ${ok ? "reachable" : "NOT reachable"} (${apiBaseUrl})`);
+}
+
+function createMainWindow() {
+  const target = dashboardUrl;
+  const api = apiBaseUrl;
+
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -36,14 +120,9 @@ function createMainWindow() {
     },
   });
 
-  // Same UI - load the dashboard (dev server or VPS dashboard_url from config).
-  const target = cfg.dashboard_url || "http://localhost:5000";
-  const api = apiBase(cfg);
-
-  // The dashboard hardcodes 127.0.0.1:8001 for API calls. When the dashboard is remote (VPS),
-  // transparently redirect those API calls to the VPS API so no dashboard code needs changing.
-  const isLocalTarget = /localhost|127\.0\.0\.1|::1/.test(new URL(target).origin);
-  if (!isLocalTarget) {
+  // The dashboard hardcodes 127.0.0.1:8001 for API calls. When in remote mode,
+  // transparently redirect those API calls to the production API so the dashboard code never changes.
+  if (appMode === "remote") {
     win.webContents.session.webRequest.onBeforeRequest({ urls: ["http://127.0.0.1:8001/*", "http://localhost:8001/*"] }, (details, cb) => {
       const pathAndQuery = details.url.replace(/^https?:\/\/[^/]+/, "");
       cb({ redirectURL: api + pathAndQuery });
@@ -55,6 +134,10 @@ function createMainWindow() {
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: "deny" };
+  });
+
+  win.webContents.on("did-fail-load", (e, code, desc, url) => {
+    if (url === target) log(`Could not load dashboard (${desc}) - is the server running?`);
   });
 
   win.webContents.on("will-navigate", (e, url) => {
@@ -102,17 +185,15 @@ async function checkPageAuth() {
 }
 
 async function connectAgentForToken(authToken) {
-  const cfg = config.load();
-  const api = apiBase(cfg);
   try {
     log("Dashboard login detected - resolving user...");
-    const meRes = await fetch(`${api}/api/auth/me?token=${encodeURIComponent(authToken)}`);
+    const meRes = await fetch(`${apiBaseUrl}/api/auth/me?token=${encodeURIComponent(authToken)}`);
     const me = await meRes.json();
     const userId = me && me.user && me.user.id;
     if (!userId) { log("Could not resolve user from session token"); return; }
 
     log(`Connected as user ${userId}`);
-    const regRes = await fetch(`${api}/api/agent/register`, {
+    const regRes = await fetch(`${apiBaseUrl}/api/agent/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ user_id: userId }),
@@ -120,12 +201,20 @@ async function connectAgentForToken(authToken) {
     const reg = await regRes.json();
     const agentToken = reg.token || authToken;
 
+    const cfg = config.load();
     cfg.user_id = userId;
     cfg.token = agentToken;
+    // Agent must talk to the same backend as the dashboard.
+    cfg.vps_url = apiBaseUrl;
+    cfg.ws_url = apiBaseUrl.replace(/^http/, "ws") + "/ws/agent";
     config.save(cfg);
 
     if (!agent) {
-      agent = new LocalAgent({ onStatusChange: setTray, onLog: log });
+      agent = new LocalAgent({
+        onStatusChange: setTray,
+        onLog: log,
+        onNotify: (n) => showNotification(n),
+      });
       agent.folderPicker = async () => {
         const r = await dialog.showOpenDialog(mainWindow, {
           title: "Select Project Folder",
@@ -186,9 +275,32 @@ ipcMain.handle("ui:state", () => ({
   project_folder: agent ? (agent.cfg.project_folder || "") : "",
 }));
 
+// ---- Notifications ----
+
+function showNotification(n) {
+  const { Notification } = require("electron");
+  if (!Notification.isSupported()) { log("Desktop notifications not supported on this OS"); return; }
+  const notif = new Notification({
+    title: n.title || "AIED",
+    body: n.body || "",
+    silent: n.level !== "error",
+    urgency: n.level === "error" ? "critical" : "normal",
+  });
+  notif.on("click", () => {
+    if (mainWindow) {
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.send("agent:notification-clicked", n);
+    }
+  });
+  notif.show();
+}
+
 // ---- App lifecycle ----
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await resolveStartupMode();
+  log(`Mode: ${appMode} | API: ${apiBaseUrl} | Dashboard: ${dashboardUrl}`);
   mainWindow = createMainWindow();
   createTray();
 

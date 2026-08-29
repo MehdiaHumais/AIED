@@ -979,6 +979,23 @@ async def agent_register(data: dict):
     return {"token": token, "user_id": user_id}
 
 
+@app.post("/api/agent/notify")
+async def agent_notify(data: dict):
+    """Push a desktop notification to a user's connected Local Agent. For testing / manual use."""
+    user_id = data.get("user_id", "")
+    if not user_id:
+        return {"error": "user_id required"}
+    ok = await agent_manager.notify(
+        user_id,
+        data.get("title", "AIED"),
+        data.get("body", ""),
+        data.get("level", "info"),
+    )
+    if not ok:
+        return {"success": False, "error": "Local Agent not connected"}
+    return {"success": True}
+
+
 @app.post("/api/agent/update-folder")
 async def agent_update_folder(data: dict):
     user_id = data.get("user_id", "")
@@ -3480,6 +3497,19 @@ async def ceo_chat(conv_id: str, body: dict = Body(...)):
         if "error" in result:
             print(f"[CEO CHAT ERROR] {result['error']}", )
             return JSONResponse(status_code=500, content=result)
+
+        # Push a desktop notification: the CEO has answered the user.
+        try:
+            _conv = _get_ceo().get_conversation(conv_id)
+            _uid = ""
+            if _conv:
+                _uid = _conv.context.get("user_id", "") or ""
+            if _uid:
+                _answer = (result.get("message") or result.get("output") or result.get("reply") or "")[:120]
+                from apps.api.agent_server import agent_manager
+                await agent_manager.notify(_uid, "CEO has answered", _answer or "Your CEO response is ready.", "info")
+        except Exception as _ne:
+            print(f"[CEO CHAT] notify failed: {_ne}")
 
         # If the CEO forwarded to Layer 2, actually start the workflow
         if result.get("action") == "forwarded_to_layer2" and result.get("workflow_run_id", "").startswith("pending-"):
