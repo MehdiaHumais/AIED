@@ -6,12 +6,12 @@ const CONFIG_DIR = path.join(os.homedir(), ".aied-agent");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
 
 const DEFAULTS = {
-  vps_url: "http://77.237.239.69:8001",
-  ws_url: "ws://77.237.239.69:8001/ws/agent",
+  vps_url: "https://aiedapi.britsyncai.com",
+  ws_url: "wss://aiedapi.britsyncai.com/ws/agent",
   token: "",
   user_id: "",
   project_folder: "",
-  dashboard_url: "http://localhost:5000",
+  dashboard_url: "http://127.0.0.1:8765",
 };
 
 function ensureDir() {

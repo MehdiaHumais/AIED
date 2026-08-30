@@ -346,7 +346,7 @@ export default function Layer1Page() {
 
               <div className="space-y-1.5">
                 {repositories.map(repo => (
-                  <Link key={repo.id} href={`/knowledge/${repo.id}`}
+                  <Link key={repo.id} href={`/knowledge/detail?id=${repo.id}`}
                     className="block rounded-lg border border-border bg-background p-2.5 transition-colors hover:bg-accent/50">
                     <p className="text-xs font-semibold">{repo.name}</p>
                     <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{repo.description}</p>

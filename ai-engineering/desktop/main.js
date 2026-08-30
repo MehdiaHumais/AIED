@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell, Tray, nativeImage } = require("electron");
+const http = require("http");
 const path = require("path");
 const fs = require("fs");
 const { spawn } = require("child_process");
@@ -14,7 +15,77 @@ let lastToken = null;
 // Resolved at startup: "local" = backend on this machine, "remote" = configured VPS/production.
 let appMode = "remote";
 let apiBaseUrl = "http://127.0.0.1:8001";
-let dashboardUrl = "http://localhost:5000";
+let dashboardUrl = "http://127.0.0.1:8765";
+const DESKTOP_PORT = 8765;
+
+const MIME = {
+  ".html": "text/html; charset=utf-8",
+  ".txt": "text/plain; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".ico": "image/x-icon",
+  ".webp": "image/webp",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+  ".otf": "font/otf",
+  ".map": "application/json",
+};
+
+// ---- Bundled dashboard static server (self-contained UI) ----
+
+function dashboardDir() {
+  // Packaged: <resources>/app.asar/dashboard-out ; dev: <repo>/desktop/dashboard-out
+  const candidates = [
+    path.join(__dirname, "dashboard-out"),
+    path.join(path.dirname(process.execPath), "resources", "app.asar", "dashboard-out"),
+    path.join(process.resourcesPath || "", "app.asar", "dashboard-out"),
+  ];
+  for (const c of candidates) {
+    try { if (fs.existsSync(path.join(c, "index.html"))) return c; } catch { /* ignore */ }
+  }
+  return path.join(__dirname, "dashboard-out");
+}
+
+function startDashboardServer() {
+  const root = dashboardDir();
+  const server = http.createServer((req, res) => {
+    try {
+      let urlPath = decodeURIComponent((req.url || "/").split("?")[0]);
+      if (urlPath === "/") urlPath = "/index.html";
+      // Static export produces friendly .html files (e.g. /projects -> projects.html).
+      let file = path.join(root, urlPath);
+      if (!fs.existsSync(file) && !file.endsWith(".html") && !path.extname(file)) {
+        const html = path.join(root, urlPath + ".html");
+        if (fs.existsSync(html)) file = html;
+      }
+      const dirAsHtml = path.join(root, urlPath, "index.html");
+      if (fs.existsSync(dirAsHtml) && fs.statSync(dirAsHtml).isFile()) file = dirAsHtml;
+      if (!fs.existsSync(file) || fs.statSync(file).isDirectory()) {
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("Not Found");
+        return;
+      }
+      const ext = path.extname(file).toLowerCase();
+      res.writeHead(200, { "Content-Type": MIME[ext] || "application/octet-stream" });
+      fs.createReadStream(file).pipe(res);
+    } catch (e) {
+      res.writeHead(500, { "Content-Type": "text/plain" });
+      res.end("Server error: " + e.message);
+    }
+  });
+  server.listen(DESKTOP_PORT, "127.0.0.1", () => {
+    log(`Bundled dashboard served at http://127.0.0.1:${DESKTOP_PORT}`);
+  });
+  return server;
+}
 
 const PYTHON_CANDIDATES = [
   "C:\\Users\\Digital\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
@@ -71,11 +142,22 @@ async function startLocalBackend() {
 async function resolveStartupMode() {
   const cfg = config.load();
 
+  // The dashboard UI is always bundled and served locally by this app.
+  dashboardUrl = `http://127.0.0.1:${DESKTOP_PORT}`;
+
+  // In a packaged production install, always use the configured server (never local dev).
+  if (app.isPackaged) {
+    appMode = "remote";
+    apiBaseUrl = (cfg.vps_url || "https://aiedapi.britsyncai.com").replace(/\/$/, "");
+    const ok = await isUrlUp(apiBaseUrl + "/api/agents");
+    log(`Production server ${ok ? "reachable" : "NOT reachable"} (${apiBaseUrl})`);
+    return;
+  }
+
   // 1. Local backend already running?
   if (await isUrlUp("http://127.0.0.1:8001/api/agents")) {
     appMode = "local";
     apiBaseUrl = "http://127.0.0.1:8001";
-    dashboardUrl = "http://localhost:5000";
     return;
   }
 
@@ -88,7 +170,6 @@ async function resolveStartupMode() {
       if (await isUrlUp("http://127.0.0.1:8001/api/agents")) {
         appMode = "local";
         apiBaseUrl = "http://127.0.0.1:8001";
-        dashboardUrl = "http://localhost:5000";
         log("Local backend is up.");
         return;
       }
@@ -98,8 +179,7 @@ async function resolveStartupMode() {
 
   // 3. Use configured production/VPS URLs (end users).
   appMode = "remote";
-  apiBaseUrl = (cfg.vps_url || "http://77.237.239.69:8001").replace(/\/$/, "");
-  dashboardUrl = cfg.dashboard_url || "http://localhost:5000";
+  apiBaseUrl = (cfg.vps_url || "https://aiedapi.britsyncai.com").replace(/\/$/, "");
   const ok = await isUrlUp(apiBaseUrl + "/api/agents");
   log(`Configured server ${ok ? "reachable" : "NOT reachable"} (${apiBaseUrl})`);
 }
@@ -299,6 +379,7 @@ function showNotification(n) {
 // ---- App lifecycle ----
 
 app.whenReady().then(async () => {
+  startDashboardServer();
   await resolveStartupMode();
   log(`Mode: ${appMode} | API: ${apiBaseUrl} | Dashboard: ${dashboardUrl}`);
   mainWindow = createMainWindow();

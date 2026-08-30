@@ -16,7 +16,8 @@
       "main.js",
       "preload.js",
       "agent.js",
-      "config.js"
+      "config.js",
+      "dashboard-out/**/*"
     ],
     "win": {
       "target": [
@@ -26,7 +27,8 @@
             "x64"
           ]
         }
-      ]
+      ],
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,

@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, Suspense } from "react"
 import Link from "next/link"
-import { useParams, useRouter } from "next/navigation"
+import { useSearchParams } from "next/navigation"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import {
   ArrowLeft,
@@ -65,9 +65,24 @@ const iconMap: Record<string, any> = {
 }
 
 export default function KnowledgeDetailPage() {
-  const params = useParams()
-  const router = useRouter()
-  const repoId = String(params.id || "")
+  return (
+    <Suspense
+      fallback={
+        <DashboardLayout>
+          <div className="flex items-center justify-center h-64">
+            <p className="text-muted-foreground">Loading repository...</p>
+          </div>
+        </DashboardLayout>
+      }
+    >
+      <KnowledgeDetailInner />
+    </Suspense>
+  )
+}
+
+function KnowledgeDetailInner() {
+  const searchParams = useSearchParams()
+  const repoId = String(searchParams.get("id") || "")
 
   const [repo, setRepo] = useState<Repository | null>(null)
   const [loading, setLoading] = useState(true)
