@@ -145,10 +145,12 @@ async function resolveStartupMode() {
   // The dashboard UI is always bundled and served locally by this app.
   dashboardUrl = `http://127.0.0.1:${DESKTOP_PORT}`;
 
-  // In a packaged production install, always use the configured server (never local dev).
+  // In a packaged production install, always use the production server (never local dev,
+  // and never trust a stale saved config that may point at an old server).
   if (app.isPackaged) {
+    const PRODUCTION_URL = "https://aiedapi.britsyncai.com";
     appMode = "remote";
-    apiBaseUrl = (cfg.vps_url || "https://aiedapi.britsyncai.com").replace(/\/$/, "");
+    apiBaseUrl = PRODUCTION_URL;
     const ok = await isUrlUp(apiBaseUrl + "/api/agents");
     log(`Production server ${ok ? "reachable" : "NOT reachable"} (${apiBaseUrl})`);
     return;
