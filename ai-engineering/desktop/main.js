@@ -274,7 +274,17 @@ async function connectAgentForToken(authToken) {
     const userId = me && me.user && me.user.id;
     if (!userId) { log("Could not resolve user from session token"); return; }
 
-    log(`Connected as user ${userId}`);
+    await startAgent(userId, authToken);
+  } catch (e) {
+    log(`Auto-connect failed: ${e.message}`);
+  }
+}
+
+// Start (or restart) the Local Agent for a user. Used on fresh login and on app
+// startup when a saved session exists.
+async function startAgent(userId, authToken) {
+  try {
+    log(`Connecting agent as user ${userId}`);
     const regRes = await fetch(`${apiBaseUrl}/api/agent/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -309,7 +319,34 @@ async function connectAgentForToken(authToken) {
     agent.cfg = config.load();
     agent.start();
   } catch (e) {
-    log(`Auto-connect failed: ${e.message}`);
+    log(`Failed to start agent: ${e.message}`);
+  }
+}
+
+// On startup, if a saved session exists, reconnect the agent from config.
+function restoreAgentFromConfig() {
+  const cfg = config.load();
+  if (cfg.token && cfg.user_id && cfg.ws_url) {
+    log(`Restoring agent session for ${cfg.user_id} (ws_url=${cfg.ws_url})`);
+    if (!agent) {
+      agent = new LocalAgent({
+        onStatusChange: setTray,
+        onLog: log,
+        onNotify: (n) => showNotification(n),
+      });
+      agent.folderPicker = async () => {
+        const r = await dialog.showOpenDialog(mainWindow, {
+          title: "Select Project Folder",
+          properties: ["openDirectory", "createDirectory"],
+        });
+        if (r.canceled || r.filePaths.length === 0) return null;
+        return path.normalize(r.filePaths[0]);
+      };
+    }
+    agent.cfg = config.load();
+    agent.start();
+  } else {
+    log("No saved agent session to restore.");
   }
 }
 
@@ -386,6 +423,7 @@ app.whenReady().then(async () => {
   log(`Mode: ${appMode} | API: ${apiBaseUrl} | Dashboard: ${dashboardUrl}`);
   mainWindow = createMainWindow();
   createTray();
+  restoreAgentFromConfig();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -406,6 +444,10 @@ app.on("before-quit", () => {
 
 function log(msg) {
   console.log("[AIED Desktop]", msg);
+  try {
+    const logDir = path.join(app.getPath("userData"), "..", ".aied-agent");
+    fs.appendFileSync(path.join(logDir, "main.log"), `[${new Date().toISOString()}] ${msg}\n`);
+  } catch (e) {}
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send("agent:log", msg);
   }

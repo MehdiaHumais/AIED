@@ -196,12 +196,7 @@ export default function ProjectsPage() {
   const pickFolder = async (setTarget: (path: string) => void) => {
     try {
       const qs = user?.id ? `?user_id=${user.id}` : ""
-      const useAgent = agentConnected
-      const res = await fetch(
-        useAgent
-          ? `http://127.0.0.1:8001/api/agent/select-folder${qs}`
-          : "http://127.0.0.1:8001/api/system/select-folder"
-      )
+      const res = await fetch(`http://127.0.0.1:8001/api/agent/select-folder${qs}`)
       const data = await res.json()
       if (data.path) setTarget(data.path)
       else if (data.error) setError(data.error)

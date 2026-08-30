@@ -897,9 +897,15 @@ async def validate_path(data: dict):
 
 @app.get("/api/system/select-folder")
 async def system_select_folder():
-    """Open a native OS dialog to select a folder and return the absolute path."""
+    """Open a native OS dialog to select a folder and return the absolute path.
+
+    Only works on a machine that has this app's local Python + a display (i.e. the
+    developer's dev-box). In production / remote mode this is always handled by the
+    Local Agent through /api/agent/select-folder instead.
+    """
     import asyncio
-    
+    import sys
+
     script = (
         "import tkinter as tk, os\n"
         "from tkinter import filedialog\n"
@@ -914,18 +920,21 @@ async def system_select_folder():
         "except Exception as e:\n"
         "    pass\n"
     )
-    
+
+    interpreter = sys.executable or r"C:\Users\Digital\AppData\Local\Programs\Python\Python311\python.exe"
     try:
         proc = await asyncio.create_subprocess_exec(
-            r"C:\Users\Digital\AppData\Local\Programs\Python\Python311\python.exe", "-c", script,
+            interpreter, "-c", script,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
         stdout, stderr = await proc.communicate()
         folder_path = stdout.decode('utf-8', errors='replace').strip()
-        return {"path": folder_path}
+        if folder_path:
+            return {"path": folder_path}
+        return {"error": "No folder selected", "path": ""}
     except Exception as e:
-        return {"error": str(e), "path": ""}
+        return {"error": "Folder picker not available on the server. Use the Local Agent (desktop app) to pick a folder.", "path": ""}
 
 
 # --- Local Agent WebSocket ---

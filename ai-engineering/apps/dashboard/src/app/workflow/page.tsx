@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { useAuth } from "@/components/auth-provider"
 import {
   ArrowRight,
   CheckCircle2,
@@ -64,6 +65,7 @@ const runStatusStyle: Record<string, { bg: string; color: string }> = {
 }
 
 export default function WorkflowPage() {
+  const { user } = useAuth()
   const [stats, setStats] = useState<WorkflowStats | null>(null)
   const [runs, setRuns] = useState<RunSummary[]>([])
   const [loading, setLoading] = useState(true)
@@ -160,7 +162,13 @@ export default function WorkflowPage() {
   }
 
   const selectFolder = async () => {
-    try { const r = await fetch(`${API}/api/system/select-folder`); const d = await r.json(); if (d.path) setBuildFolder(d.path) } catch {}
+    try {
+      const uid = user?.id ? `?user_id=${user.id}` : ""
+      const r = await fetch(`${API}/api/agent/select-folder${uid}`)
+      const d = await r.json()
+      if (d.path) setBuildFolder(d.path)
+      else if (d.error) setBuildError(d.error)
+    } catch {}
   }
 
   if (loading) return <DashboardLayout><div className="flex items-center justify-center h-64"><p style={{ color: "var(--text-muted)" }}>Loading pipeline...</p></div></DashboardLayout>
