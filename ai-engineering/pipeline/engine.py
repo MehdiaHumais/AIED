@@ -1345,9 +1345,239 @@ class Pipeline:
             "Try a completely different fix this round."
         )
 
+    async def _install_and_test_via_agent(self, task: PipelineTask, folder: str, user_id: str) -> dict:
+        """Agent-aware install+test for when project files live on the user's
+        machine (Local Agent) rather than on the pipeline (VPS) host. Mirrors
+        _install_and_test but resolves file existence through the agent. All
+        install/build/run commands go through _run_cmd, which already routes
+        through the Local Agent."""
+        mgr = self._get_agent_manager()
+        manifest_names = ("package.json", "requirements.txt", "pyproject.toml", "pom.xml", "Cargo.toml", "go.mod", "composer.json")
+
+        results = {"success": False, "install_output": "", "run_output": "", "errors": [], "commands_run": [], "tested": False}
+
+        async def _sub_files(sub: str) -> set:
+            """Return the set of file basenames in a subfolder ('' = project root)
+            by listing through the Local Agent."""
+            lst = await mgr.list_files(user_id, sub, folder)
+            if not lst.get("success"):
+                return set()
+            return {e["name"] for e in lst.get("entries", []) if e.get("type") == "file"}
+
+        async def _exists(sub: str, name: str) -> bool:
+            return name in (await _sub_files(sub))
+
+        # ---- Detect project roots (project root + immediate subfolders) ----
+        skip = ("node_modules", "__pycache__", "dist", "build", ".next", "venv", ".venv")
+        root_entries = []
+        root_list = await mgr.list_files(user_id, "", folder)
+        if root_list.get("success"):
+            root_entries = root_list.get("entries", [])
+        root_files = {e["name"] for e in root_entries if e.get("type") == "file"}
+
+        project_roots = []
+        if any(m in root_files for m in manifest_names):
+            project_roots.append(folder)
+        root_dirs = [e["name"] for e in root_entries if e.get("type") == "directory"
+                     and not e["name"].startswith((".", "_")) and e["name"] not in skip]
+        for sub in root_dirs:
+            sub_files = await _sub_files(sub)
+            if any(m in sub_files for m in manifest_names):
+                project_roots.append(os.path.join(folder, sub))
+
+        results["project_roots"] = [os.path.relpath(r, folder) or "." for r in project_roots]
+        if not project_roots:
+            results["errors"].append("No project detected - no package.json, requirements.txt, pyproject.toml, pom.xml or Cargo.toml found in the project folder or its backend/frontend subfolders.")
+            results["needs_fix"] = True
+            return results
+
+        # ---- Step 1: install dependencies per root ----
+        install_cmds = []
+        for root in project_roots:
+            rel = os.path.relpath(root, folder)
+            sub = "" if rel == "." else rel.replace("\\", "/")
+            if await _exists(sub, "package.json"):
+                install_cmds.append(("npm install --legacy-peer-deps", root))
+            if await _exists(sub, "requirements.txt"):
+                install_cmds.append(("pip install -r requirements.txt", root))
+            if await _exists(sub, "pyproject.toml"):
+                install_cmds.append(("pip install -e .", root))
+            if await _exists(sub, "pom.xml"):
+                install_cmds.append(("mvn -q -DskipTests compile", root))
+            if await _exists(sub, "Cargo.toml"):
+                install_cmds.append(("cargo build", root))
+
+        for cmd, cwd_root in install_cmds:
+            results["tested"] = True
+            try:
+                stdout_str, stderr_str, retcode = await self._run_cmd(cmd, cwd_root, timeout=300, user_id=user_id)
+                results["install_output"] += f"$ {cmd}\n{stdout_str}\n{stderr_str}\n"
+                results["commands_run"].append({"command": cmd, "returncode": retcode, "stderr": stderr_str[:2000]})
+                if retcode != 0:
+                    results["errors"].append(f"Install failed: {cmd}\n{stderr_str[:500]}")
+            except Exception as e:
+                results["errors"].append(f"Install error: {cmd}: {str(e)}")
+
+        # ---- Step 2: detect start/build commands per root ----
+        start_cmds = []
+        pkg_cache = {}
+
+        async def _read_pkg(sub: str) -> dict:
+            if sub not in pkg_cache:
+                r = await mgr.read_file(user_id, "package.json", folder if sub == "" else os.path.join(folder, sub))
+                pkg_cache[sub] = json.loads(r.get("content", "{}")) if r.get("success") else None
+            return pkg_cache[sub]
+
+        for root in project_roots:
+            rel = os.path.relpath(root, folder)
+            sub = "" if rel == "." else rel.replace("\\", "/")
+            if await _exists(sub, "package.json"):
+                try:
+                    pkg = await _read_pkg(sub) or {}
+                    scripts = pkg.get("scripts", {}) or {}
+                    deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
+                    is_next = ("next" in deps
+                               or await _exists(sub, "next.config.js")
+                               or await _exists(sub, "next.config.mjs")
+                               or await _exists(sub, "next.config.ts"))
+
+                    missing_modules = set()
+                    for dep_name in ["typescript", "tailwindcss", "postcss", "autoprefixer", "@types/node", "@types/react", "@types/react-dom", "eslint", "eslint-config-next"]:
+                        if dep_name not in deps:
+                            missing_modules.add(dep_name)
+                    if missing_modules:
+                        install_cmd = "npm install --save-dev --legacy-peer-deps " + " ".join(sorted(missing_modules))
+                        print(f"[PIPELINE] Auto-installing missing modules: {', '.join(sorted(missing_modules))}")
+                        try:
+                            out_s, err_s, retcode = await self._run_cmd(install_cmd, root, timeout=300, user_id=user_id)
+                            results["tested"] = True
+                            if retcode == 0:
+                                print(f"[PIPELINE] Auto-install succeeded: {install_cmd}")
+                            else:
+                                print(f"[PIPELINE] Auto-install failed (exit {retcode}): {err_s[:300]}")
+                        except Exception as e:
+                            print(f"[PIPELINE] Auto-install error: {e}")
+
+                    if "build" in scripts:
+                        start_cmds.append(("npm run build", root))
+                    if not is_next:
+                        if "start" in scripts:
+                            start_cmds.append(("npm start", root))
+                        elif "dev" in scripts:
+                            start_cmds.append(("npm run dev", root))
+                        elif pkg.get("main"):
+                            start_cmds.append((f"node {pkg['main']}", root))
+                    if not any(c[1] == root for c in start_cmds):
+                        if "start" in scripts:
+                            start_cmds.append(("npm start", root))
+                        elif "dev" in scripts:
+                            start_cmds.append(("npm run dev", root))
+                except Exception:
+                    start_cmds.append(("npm run build", root))
+
+            if await _exists(sub, "requirements.txt") or await _exists(sub, "pyproject.toml"):
+                py_files = await _sub_files(sub)
+                main_candidates = [f for f in ("app.py", "main.py", "manage.py", "wsgi.py") if f in py_files]
+                if main_candidates:
+                    start_cmds.append((f"py {main_candidates[0]}", root))
+                else:
+                    for f in sorted(py_files):
+                        if f.endswith(".py") and "test" not in f.lower():
+                            start_cmds.append((f"py {f}", root))
+                            break
+
+        # ---- Step 3: run build/start commands ----
+        import re as _re
+        ansi_escape = _re.compile(r'\x1b\[[0-9;]*m')
+
+        for cmd, cwd_root in start_cmds[:4]:
+            results["tested"] = True
+            try:
+                timeout = 900 if "build" in cmd else 15
+                out_str, err_str, retcode = await self._run_cmd(cmd, cwd_root, timeout=timeout, user_id=user_id)
+                clean_out = ansi_escape.sub('', out_str)
+                clean_err = ansi_escape.sub('', err_str)
+                combined = (clean_out + clean_err)[:4000]
+                results["run_output"] = f"$ {cmd}\n{combined}"
+                results["commands_run"].append({"command": cmd, "returncode": retcode, "stderr": clean_err[:4000], "stdout": clean_out[:2000]})
+                if retcode == -1:
+                    if "build" in cmd:
+                        results["errors"].append(f"Build timed out ({cmd})")
+                        results["success"] = False
+                        break
+                    else:
+                        severe = any(sev in combined for sev in ["Traceback", "SyntaxError", "ModuleNotFoundError", "ImportError", "Cannot find module", "FATAL", "ENOENT", "Type error", "error TS", "Error:", "failed to compile", "Failed to compile", "Could not find a production build"])
+                        if severe:
+                            results["errors"].append(f"Start command failed ({cmd}):\n{combined[:3000]}")
+                            results["success"] = False
+                        else:
+                            results["success"] = True
+                    continue
+                if retcode != 0:
+                    import re as _modre
+                    mod_match = _modre.search(r"Cannot find module ['\"]([^'\"]+)['\"]", combined)
+                    if mod_match:
+                        missing_mod = mod_match.group(1)
+                        print(f"[PIPELINE] Command failed - missing module '{missing_mod}', auto-installing...")
+                        try:
+                            _, fix_err, fix_ret = await self._run_cmd(f"npm install --legacy-peer-deps {missing_mod}", cwd_root, timeout=300, user_id=user_id)
+                            if fix_ret == 0:
+                                print(f"[PIPELINE] Installed '{missing_mod}', retrying...")
+                                r_out, r_err, retry_ret = await self._run_cmd(cmd, cwd_root, timeout=900, user_id=user_id)
+                                r_combined = ansi_escape.sub('', (r_out + r_err))[:4000]
+                                if retry_ret == 0:
+                                    results["run_output"] = f"$ {cmd} (after installing {missing_mod})\n{r_combined}"
+                                    results["success"] = True
+                                    results["errors"] = []
+                                else:
+                                    results["errors"].append(f"Still failed after installing {missing_mod}:\n{r_combined[:3000]}")
+                            else:
+                                print(f"[PIPELINE] npm install failed for '{missing_mod}': {fix_err[:200]}")
+                        except Exception as retry_err:
+                            print(f"[PIPELINE] Auto-retry failed: {retry_err}")
+                    if not results["success"]:
+                        severe = any(sev in combined for sev in ["Traceback", "SyntaxError", "ModuleNotFoundError", "ImportError", "Cannot find module", "FATAL", "ENOENT", "Type error", "error TS", "Error:", "failed to compile", "Failed to compile", "Could not find a production build"])
+                        if "build" in cmd:
+                            results["errors"].append(f"Build failed ({cmd}):\n{combined[:3000]}")
+                        elif severe:
+                            results["errors"].append(f"Runtime error ({cmd}):\n{combined[:3000]}")
+                        else:
+                            results["errors"].append(f"Command failed ({cmd}, exit {retcode}):\n{combined[:2000]}")
+                        results["success"] = False
+                else:
+                    results["success"] = True
+            except Exception as e:
+                results["errors"].append(f"Run error: {cmd}: {str(e)}")
+
+            if not results["success"] and results["errors"]:
+                break
+
+        if results["errors"] and not results["success"]:
+            results["needs_fix"] = True
+            results["error_text"] = "\n\n".join(results["errors"])
+        else:
+            results["needs_fix"] = False
+
+        # Runtime browser check only makes sense on a real local/VPS filesystem.
+        # Through the Local Agent we skip it - install+build+run is enough to
+        # decide pass/fail for the completeness gate.
+        return results
+
     async def _install_and_test(self, task: PipelineTask) -> dict:
         """Install dependencies and try to run the project. Returns test results."""
         folder = task.project_folder
+        user_id = task.user_id
+
+        # When a Local Agent is connected, the project files live on the user's
+        # machine (e.g. "D:\\websites and apps\\myapp"), NOT on this (VPS)
+        # filesystem. All manifest detection must go through the agent, or the
+        # project would be reported as "no runnable project detected" even
+        # though the files are present and runnable on the user's PC.
+        if user_id and self._agent_connected(user_id):
+            if not folder:
+                return {"success": False, "output": "No project folder", "errors": ["No project folder found"]}
+            return await self._install_and_test_via_agent(task, folder, user_id)
+
         if not folder or not os.path.isdir(folder):
             return {"success": False, "output": "No project folder", "errors": ["No project folder found"]}
 
