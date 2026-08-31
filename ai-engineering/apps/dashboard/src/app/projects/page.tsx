@@ -123,6 +123,8 @@ export default function ProjectsPage() {
   const [rejectionFeedback, setRejectionFeedback] = useState("")
   const [showRejectModal, setShowRejectModal] = useState<string | null>(null)
   const pollRef = useRef<NodeJS.Timeout | null>(null)
+  const pollBusyRef = useRef(false)
+  const formOpenRef = useRef(false)
   const [editProject, setEditProject] = useState<Project | null>(null)
   const [editTask, setEditTask] = useState<Task | null>(null)
   const [editName, setEditName] = useState("")
@@ -159,6 +161,11 @@ export default function ProjectsPage() {
   }
 
   const pollAll = () => {
+    // Never overlap cycles, and stop re-rendering the page while the user is
+    // typing in a create/edit form (otherwise fast polls can swallow input
+    // focus and keystrokes in the Electron renderer).
+    if (pollBusyRef.current || formOpenRef.current || document.hidden) return
+    pollBusyRef.current = true
     const uid = user?.id || ""
     Promise.all([
       fetch("http://127.0.0.1:8001/api/tasks")
@@ -184,12 +191,14 @@ export default function ProjectsPage() {
         }
       })
       .catch(() => {})
+      .finally(() => { pollBusyRef.current = false })
   }
 
   useEffect(() => { if (user) fetchData() }, [user?.id])
+
   useEffect(() => {
     if (!user) return
-    pollRef.current = setInterval(pollAll, 3000)
+    pollRef.current = setInterval(pollAll, 8000)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [user?.id])
 
@@ -384,6 +393,10 @@ export default function ProjectsPage() {
   }
 
   const [showReplanModalTask, setShowReplanModalTask] = useState<Task | null>(null)
+
+  useEffect(() => {
+    formOpenRef.current = !!(showCreateProject || showCreateTask || editProject || editTask || showRejectModal || showReplanModalTask)
+  }, [showCreateProject, showCreateTask, editProject, editTask, showRejectModal, showReplanModalTask])
   const [replanTitle, setReplanTitle] = useState("")
   const [replanDescription, setReplanDescription] = useState("")
 

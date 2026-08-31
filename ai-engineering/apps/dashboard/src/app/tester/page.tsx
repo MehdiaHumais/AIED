@@ -86,8 +86,12 @@ export default function TesterPage() {
   const [error, setError] = useState("")
   const [newTask, setNewTask] = useState({ title: "", description: "", priority: "medium", project_id: "" })
   const pollRef = useRef<NodeJS.Timeout | null>(null)
+  const pollBusyRef = useRef(false)
+  const formOpenRef = useRef(false)
 
-  const fetchData = () => {
+  const fetchData = (force = false) => {
+    if (!force && (pollBusyRef.current || formOpenRef.current || document.hidden)) return
+    pollBusyRef.current = true
     Promise.all([
       fetch("http://127.0.0.1:8001/api/tasks?task_mode=tester").then((r) => r.json()),
       fetch("http://127.0.0.1:8001/api/pipelines").then((r) => r.json()),
@@ -104,11 +108,13 @@ export default function TesterPage() {
         setError("Could not connect to API at http://127.0.0.1:8001")
         setLoading(false)
       })
+      .finally(() => { pollBusyRef.current = false })
   }
 
   useEffect(() => { fetchData() }, [])
+  useEffect(() => { formOpenRef.current = showCreate }, [showCreate])
   useEffect(() => {
-    pollRef.current = setInterval(fetchData, 3000)
+    pollRef.current = setInterval(fetchData, 8000)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
   }, [])
 
@@ -131,7 +137,8 @@ export default function TesterPage() {
       if (res.ok) {
         setNewTask({ title: "", description: "", priority: "medium", project_id: "" })
         setShowCreate(false)
-        fetchData()
+        formOpenRef.current = false
+        fetchData(true)
       } else {
         const data = await res.json()
         setError(data.detail || "Failed to create task")
