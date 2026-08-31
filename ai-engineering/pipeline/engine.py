@@ -2337,11 +2337,23 @@ export async function POST() {
                 print(f"[PIPELINE] _repair_scaffold failed to write package.json: {e}")
         return changed
 
-    def _check_build_completeness(self, task: PipelineTask) -> str:
+    async def _check_build_completeness(self, task: PipelineTask) -> str:
         """Return a fix message if the generated project is missing critical
         scaffolding needed to install/run it, else '' (empty = complete enough)."""
         folder = task.project_folder
-        if not folder or not os.path.isdir(folder):
+        if not folder:
+            return ("No project folder was created - the build agents must output the project "
+                    "files into the project folder.")
+
+        # When a Local Agent is connected, the project files live on the user's
+        # machine (e.g. "D:\\websites and apps\\myapp"), NOT on this (VPS)
+        # filesystem. Always resolve existence through the agent in that case,
+        # otherwise a local os.path.isdir() would wrongly report "no folder".
+        user_id = task.user_id
+        if user_id and self._agent_connected(user_id):
+            return await self._check_build_completeness_via_agent(task, folder, user_id)
+
+        if not os.path.isdir(folder):
             return ("No project folder was created - the build agents must output the project "
                     "files into the project folder.")
 
@@ -2376,6 +2388,73 @@ export async function POST() {
                     "package.json with correct build/start scripts and the index.html entry file.")
 
         return ""
+
+    async def _check_build_completeness_via_agent(self, task: PipelineTask, folder: str, user_id: str) -> str:
+        """Agent-aware completeness check for when project files live on the
+        user's machine (Local Agent) rather than on the pipeline (VPS) host."""
+        mgr = self._get_agent_manager()
+
+        # Confirm the agent can reach a usable project folder at all. If the
+        # agent has no folder configured, the project genuinely wasn't placed
+        # anywhere, so send it back to the builder.
+        tree_result = await mgr.read_tree(user_id, folder)
+        if not tree_result.get("success") and "No project folder configured" in (tree_result.get("error") or ""):
+            return ("No project folder was created - the build agents must output the project "
+                    "files into the project folder.")
+        tree = tree_result.get("tree", "") or ""
+        has_tree = bool(tree.strip())
+
+        async def _has_file(rel: str) -> str:
+            result = await mgr.read_file(user_id, rel, folder)
+            if result.get("success"):
+                return result.get("content", "")
+            return ""
+
+        pkg_content = await _has_file("package.json")
+        has_pkg = pkg_content != ""
+        pkg_scripts = {}
+        pkg_main = ""
+        if has_pkg:
+            try:
+                pkg = json.loads(pkg_content)
+                pkg_scripts = pkg.get("scripts", {}) or {}
+                pkg_main = pkg.get("main", "") or ""
+            except Exception:
+                return ("package.json exists but is invalid JSON. Re-output it as valid JSON "
+                        "with a 'scripts' section containing build/dev/start commands.")
+
+        has_req = (await _has_file("requirements.txt")) != ""
+        has_pyproj = (await _has_file("pyproject.toml")) != ""
+        has_index_html = (await _has_file("index.html")) != ""
+
+        if has_pkg and not (pkg_scripts.get("build") or pkg_scripts.get("dev") or pkg_scripts.get("start") or pkg_main):
+            return ("package.json exists but has NO build/dev/start scripts and no 'main' entry, so the "
+                    "project cannot be installed, built, or started. Re-output the COMPLETE project "
+                    "INCLUDING a package.json with a proper 'scripts' section (e.g. "
+                    "\"dev\": \"next dev\" / \"build\": \"next build\" for Next.js, or "
+                    "\"vite\" / \"vite build\" for Vite).")
+
+        if has_tree and self._tree_looks_like_web_app(tree) and not has_pkg and not has_index_html and not (has_req or has_pyproj):
+            return ("The project contains web app source files but is MISSING package.json and index.html, "
+                    "so it cannot be installed or started. Re-output the COMPLETE project INCLUDING "
+                    "package.json with correct build/start scripts and the index.html entry file.")
+
+        return ""
+
+    @staticmethod
+    def _tree_looks_like_web_app(tree: str) -> bool:
+        """Best-effort web-app detection from a directory tree string (used when
+        the actual filesystem is on the user's machine via the Local Agent)."""
+        dir_markers = ("src/", "app/", "components/", "pages/", "public/", "views/", "assets/")
+        web_exts = (".jsx", ".tsx", ".vue", ".svelte")
+        for line in tree.splitlines():
+            low = line.strip().lstrip("├──└│ ").lower()
+            for m in dir_markers:
+                if m in low:
+                    return True
+            if low.endswith(web_exts):
+                return True
+        return False
 
     async def _verify_no_remaining_issues(self, task: PipelineTask) -> dict:
         """After build passes, aggressively scan for ALL remaining issues: code review + runtime errors."""
@@ -3168,7 +3247,7 @@ command
             # critical scaffolding (package.json without scripts, no index.html,
             # no manifest at all). Otherwise an agent that only wrote half the
             # project would sail through as "approved".
-            completeness_issue = self._check_build_completeness(task) if has_files else ""
+            completeness_issue = await self._check_build_completeness(task) if has_files else ""
             if completeness_issue:
                 print(f"[PIPELINE] Completeness gate: {completeness_issue[:200]}")
                 task.rejection_count += 1
