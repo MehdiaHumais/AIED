@@ -1,0 +1,7 @@
+# Electron build outputs
+dist/
+dist[0-9]/
+win-unpacked/
+
+# Local agent runtime
+.config/
