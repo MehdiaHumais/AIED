@@ -58,22 +58,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const login = async (email: string, password: string) => {
-    try {
-      const res = await fetch("http://127.0.0.1:8001/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      })
-      const data = await res.json()
-      if (data.error) return { error: data.error }
-      setToken(data.token)
-      setUser(data.user)
-      localStorage.setItem("aied-token", data.token)
-      ;(window as any).aied?.notifyLogin?.(data.token)
-      return {}
-    } catch {
-      return { error: "Failed to connect to server" }
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const res = await fetch("http://127.0.0.1:8001/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        })
+        const data = await res.json()
+        if (data.error) return { error: data.error }
+        setToken(data.token)
+        setUser(data.user)
+        localStorage.setItem("aied-token", data.token)
+        ;(window as any).aied?.notifyLogin?.(data.token)
+        return {}
+      } catch (e) {
+        if (attempt > 1) {
+          console.error("AIED login failed:", e)
+          return { error: "Failed to connect to server. Please try again." }
+        }
+        await new Promise((r) => setTimeout(r, 1200))
+      }
     }
+    return { error: "Failed to connect to server. Please try again." }
   }
 
   const signup = async (signupData: { name: string; email: string; password: string; company_name?: string; company_role?: string; company_size?: string; company_website?: string }) => {

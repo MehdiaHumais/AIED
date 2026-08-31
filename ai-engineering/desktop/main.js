@@ -222,6 +222,10 @@ function createMainWindow() {
     if (url === target) log(`Could not load dashboard (${desc}) - is the server running?`);
   });
 
+  win.webContents.on("console-message", (event, level, message) => {
+    if (level === 3) log(`[renderer error] ${message}`);
+  });
+
   win.webContents.on("will-navigate", (e, url) => {
     const current = win.webContents.getURL();
     if (new URL(url).origin !== new URL(current).origin) {
