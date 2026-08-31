@@ -384,10 +384,11 @@ function createTray() {
 
 function setTray(status) {
   if (!tray) return;
-  tray.setToolTip(`AIED Desktop - ${status}`);
+  const txt = typeof status === "boolean" ? (status ? "Connected" : "Disconnected") : String(status || "Idle");
+  tray.setToolTip(`AIED Desktop - ${txt}`);
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "Open AIED Desktop", click: () => { if (mainWindow) { mainWindow.show(); mainWindow.focus(); } } },
-    { label: status, enabled: false },
+    { label: txt, enabled: false },
     { type: "separator" },
     { label: "Quit", click: () => app.quit() },
   ]));
