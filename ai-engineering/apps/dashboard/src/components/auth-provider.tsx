@@ -69,6 +69,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setToken(data.token)
       setUser(data.user)
       localStorage.setItem("aied-token", data.token)
+      ;(window as any).aied?.notifyLogin?.(data.token)
       return {}
     } catch {
       return { error: "Failed to connect to server" }
@@ -91,6 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setToken(data.token)
         setUser(data.user)
         localStorage.setItem("aied-token", data.token)
+        ;(window as any).aied?.notifyLogin?.(data.token)
       }
       return {}
     } catch {
@@ -102,6 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
     setToken(null)
     localStorage.removeItem("aied-token")
+    ;(window as any).aied?.notifyLogout?.()
   }
 
   const refreshUser = async () => {

@@ -324,7 +324,9 @@ async function startAgent(userId, authToken) {
 }
 
 // On startup, if a saved session exists, reconnect the agent from config.
-function restoreAgentFromConfig() {
+// Also falls back to any token already sitting in the dashboard's localStorage
+// so a relaunch while still logged-in reconnects without a fresh login event.
+async function restoreAgentFromConfig() {
   const cfg = config.load();
   if (cfg.token && cfg.user_id && cfg.ws_url) {
     log(`Restoring agent session for ${cfg.user_id} (ws_url=${cfg.ws_url})`);
@@ -345,9 +347,22 @@ function restoreAgentFromConfig() {
     }
     agent.cfg = config.load();
     agent.start();
-  } else {
-    log("No saved agent session to restore.");
+    return;
   }
+
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      const stored = await mainWindow.webContents.executeJavaScript(`localStorage.getItem("aied-token")`, true);
+      if (typeof stored === "string" && stored) {
+        log("Found existing dashboard session - connecting agent");
+        await connectAgentForToken(stored);
+        return;
+      }
+    }
+  } catch (e) {
+    log(`LocalStorage token read failed: ${e.message}`);
+  }
+  log("No saved agent session to restore.");
 }
 
 // ---- Tray ----
@@ -394,6 +409,22 @@ ipcMain.handle("ui:state", () => ({
   project_folder: agent ? (agent.cfg.project_folder || "") : "",
 }));
 
+// The dashboard calls these via the preload bridge whenever login state changes.
+ipcMain.handle("auth:login", async (e, authToken) => {
+  if (typeof authToken !== "string" || !authToken) return { ok: false };
+  lastToken = authToken;
+  log("Dashboard reported login (IPC)");
+  await connectAgentForToken(authToken);
+  return { ok: true };
+});
+
+ipcMain.handle("auth:logout", () => {
+  lastToken = null;
+  if (agent) { agent.stop(); setTray("Disconnected"); }
+  log("Logged out - agent disconnected");
+  return { ok: true };
+});
+
 // ---- Notifications ----
 
 function showNotification(n) {
@@ -422,12 +453,23 @@ app.whenReady().then(async () => {
   await resolveStartupMode();
   log(`Mode: ${appMode} | API: ${apiBaseUrl} | Dashboard: ${dashboardUrl}`);
   mainWindow = createMainWindow();
+
+  // Wait for the dashboard page to finish loading, then restore a saved session.
+  if (mainWindow) {
+    mainWindow.webContents.on("did-finish-load", () => {
+      log("Dashboard page loaded - restoring agent session");
+      restoreAgentFromConfig();
+    });
+  }
+
   createTray();
-  restoreAgentFromConfig();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       mainWindow = createMainWindow();
+      if (mainWindow) {
+        mainWindow.webContents.on("did-finish-load", () => restoreAgentFromConfig());
+      }
     }
   });
 });
@@ -445,7 +487,8 @@ app.on("before-quit", () => {
 function log(msg) {
   console.log("[AIED Desktop]", msg);
   try {
-    const logDir = path.join(app.getPath("userData"), "..", ".aied-agent");
+    const logDir = config.CONFIG_FILE ? path.dirname(config.CONFIG_FILE) : path.join(os.homedir(), ".aied-agent");
+    if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
     fs.appendFileSync(path.join(logDir, "main.log"), `[${new Date().toISOString()}] ${msg}\n`);
   } catch (e) {}
   if (mainWindow && !mainWindow.isDestroyed()) {
