@@ -109,6 +109,91 @@ class CompanyStore:
         self._save_user(user_id, data)
         return data.profile
 
+    # --- VPS credentials (per-user, multiple named accounts) ---
+
+    def _load_vps_accounts(self, data) -> list[dict[str, Any]]:
+        raw = getattr(data.profile, "extra_fields", {}).get("vps_credentials", [])
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except Exception:
+                return []
+        if isinstance(raw, dict):
+            if "vps_accounts" in raw:
+                raw = raw["vps_accounts"]
+            else:
+                # Migrate a single legacy account (dict without name key) into a list.
+                if any(k in raw for k in ("vps_host",)):
+                    return [{
+                        "name": raw.get("name") or "Default VPS",
+                        "vps_host": raw.get("vps_host", ""),
+                        "vps_port": raw.get("vps_port", "22"),
+                        "vps_username": raw.get("vps_username", "root"),
+                        "vps_private_key": raw.get("vps_private_key", ""),
+                        "vps_password": raw.get("vps_password", ""),
+                    }]
+                return []
+        if not isinstance(raw, list):
+            return []
+        return [dict(a) for a in raw if isinstance(a, dict)]
+
+    def get_user_vps_credentials(self, user_id: str) -> list[dict[str, Any]]:
+        """Return all saved VPS credential accounts for a user (never raises)."""
+        data = self._load_user(user_id)
+        return self._load_vps_accounts(data)
+
+    def set_user_vps_credentials(self, user_id: str, accounts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Replace the full list of VPS credential accounts for a user."""
+        data = self._load_user(user_id)
+        allowed = ("name", "vps_host", "vps_port", "vps_username", "vps_private_key", "vps_password")
+        cleaned = []
+        for a in accounts if isinstance(accounts, list) else []:
+            if not isinstance(a, dict):
+                continue
+            cleaned.append({k: a.get(k, "") for k in allowed})
+        data.profile.extra_fields["vps_credentials"] = json.dumps(cleaned, ensure_ascii=False)
+        data.profile.updated_at = datetime.utcnow().isoformat() + "Z"
+        self._save_user(user_id, data)
+        return cleaned
+
+    def add_user_vps_account(self, user_id: str, account: dict[str, Any]) -> list[dict[str, Any]]:
+        """Add a single VPS credential account for a user."""
+        data = self._load_user(user_id)
+        accounts = self._load_vps_accounts(data)
+        allowed = ("name", "vps_host", "vps_port", "vps_username", "vps_private_key", "vps_password")
+        entry = {k: account.get(k, "") for k in allowed}
+        accounts.append(entry)
+        data.profile.extra_fields["vps_credentials"] = json.dumps(accounts, ensure_ascii=False)
+        data.profile.updated_at = datetime.utcnow().isoformat() + "Z"
+        self._save_user(user_id, data)
+        return accounts
+
+    def update_user_vps_account(self, user_id: str, index: int, account: dict[str, Any]) -> list[dict[str, Any]]:
+        """Update a single VPS credential account by index."""
+        data = self._load_user(user_id)
+        accounts = self._load_vps_accounts(data)
+        if not (0 <= index < len(accounts)):
+            return accounts
+        allowed = ("name", "vps_host", "vps_port", "vps_username", "vps_private_key", "vps_password")
+        for k in allowed:
+            if k in account:
+                accounts[index][k] = account[k]
+        data.profile.extra_fields["vps_credentials"] = json.dumps(accounts, ensure_ascii=False)
+        data.profile.updated_at = datetime.utcnow().isoformat() + "Z"
+        self._save_user(user_id, data)
+        return accounts
+
+    def delete_user_vps_account(self, user_id: str, index: int) -> list[dict[str, Any]]:
+        """Delete a single VPS credential account by index."""
+        data = self._load_user(user_id)
+        accounts = self._load_vps_accounts(data)
+        if 0 <= index < len(accounts):
+            accounts.pop(index)
+        data.profile.extra_fields["vps_credentials"] = json.dumps(accounts, ensure_ascii=False)
+        data.profile.updated_at = datetime.utcnow().isoformat() + "Z"
+        self._save_user(user_id, data)
+        return accounts
+
     def list_user_projects(self, user_id: str) -> list[dict[str, Any]]:
         return [p.model_dump() for p in self._load_user(user_id).projects]
 

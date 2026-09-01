@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { useAuth } from "@/components/auth-provider"
 
 const API = "http://127.0.0.1:8001"
 
@@ -87,6 +88,8 @@ const stepStatusColor: Record<string, string> = {
 }
 
 export default function VPSDeployPage() {
+  const { user } = useAuth()
+  const credsFilledRef = useRef(false)
   const [deployments, setDeployments] = useState<Deployment[]>([])
   const [selected, setSelected] = useState<Deployment | null>(null)
   const [steps, setSteps] = useState<DeployStep[]>([])
@@ -98,6 +101,7 @@ export default function VPSDeployPage() {
     github_repo: "",
     branch: "main",
     domain: "",
+    project_details: "",
     vps_host: "",
     vps_port: "22",
     vps_username: "root",
@@ -107,6 +111,8 @@ export default function VPSDeployPage() {
     env_vars: "",
   })
   const [error, setError] = useState("")
+  const [vpsAccounts, setVpsAccounts] = useState<any[]>([])
+  const [savedVpsSelected, setSavedVpsSelected] = useState("")
   const pollRef = useRef<NodeJS.Timeout | null>(null)
   const logsEndRef = useRef<HTMLDivElement>(null)
 
@@ -116,6 +122,43 @@ export default function VPSDeployPage() {
       const data = await res.json()
       setDeployments(data.deployments || [])
     } catch {}
+  }
+
+  const prefillVpsCreds = async () => {
+    if (credsFilledRef.current || !user?.id) return
+    try {
+      const res = await fetch(`${API}/api/company/vps-credentials?user_id=${user.id}`)
+      const data = await res.json()
+      const accounts = Array.isArray(data.vps_credentials) ? data.vps_credentials : []
+      setVpsAccounts(accounts)
+      if (accounts.length > 0) {
+        const first = accounts[0]
+        setForm(f => ({
+          ...f,
+          vps_host: first.vps_host || f.vps_host,
+          vps_port: String(first.vps_port || f.vps_port),
+          vps_username: first.vps_username || f.vps_username,
+          vps_private_key: first.vps_private_key || "",
+          vps_password: first.vps_password || "",
+        }))
+        setSavedVpsSelected(accounts[0].name || accounts[0].vps_host || "")
+        credsFilledRef.current = true
+      }
+    } catch {}
+  }
+
+  const selectVpsAccount = (name: string) => {
+    const account = vpsAccounts.find(a => (a.name || a.vps_host) === name)
+    if (!account) return
+    setSavedVpsSelected(name)
+    setForm(f => ({
+      ...f,
+      vps_host: account.vps_host || "",
+      vps_port: String(account.vps_port || "22"),
+      vps_username: account.vps_username || "root",
+      vps_private_key: account.vps_private_key || "",
+      vps_password: account.vps_password || "",
+    }))
   }
 
   const fetchDetail = async (id: string) => {
@@ -132,20 +175,21 @@ export default function VPSDeployPage() {
 
   useEffect(() => {
     fetchData()
+    prefillVpsCreds()
     pollRef.current = setInterval(() => {
       fetchData()
       if (selected) fetchDetail(selected.id)
     }, 3000)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
-  }, [selected?.id])
+  }, [selected?.id, user?.id])
 
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [logs.length])
 
   const submitDeploy = async () => {
-    if (!form.project_name || !form.github_repo || !form.vps_host) {
-      setError("Project name, GitHub repo, and VPS host are required.")
+    if (!form.project_name || !form.github_repo || !form.domain.trim() || !form.vps_host) {
+      setError("Project name, GitHub repo, Domain, and VPS host are required.")
       return
     }
     setDeploying(true)
@@ -166,6 +210,7 @@ export default function VPSDeployPage() {
           github_repo: form.github_repo,
           branch: form.branch,
           domain: form.domain,
+          project_details: form.project_details,
           vps_host: form.vps_host,
           vps_port: parseInt(form.vps_port),
           vps_username: form.vps_username,
@@ -178,7 +223,7 @@ export default function VPSDeployPage() {
       const data = await res.json()
       if (data.deployment_id) {
         setShowForm(false)
-        setForm({ project_name: "", github_repo: "", branch: "main", domain: "", vps_host: "", vps_port: "22", vps_username: "root", vps_private_key: "", vps_password: "", deploy_mode: "automatic", env_vars: "" })
+        setForm({ project_name: "", github_repo: "", branch: "main", domain: "", project_details: "", vps_host: "", vps_port: "22", vps_username: "root", vps_private_key: "", vps_password: "", deploy_mode: "automatic", env_vars: "" })
         setLogs([])
         setSteps([])
         fetchData()
@@ -253,13 +298,41 @@ export default function VPSDeployPage() {
                 <input value={form.branch} onChange={(e) => setForm({ ...form, branch: e.target.value })} placeholder="main" className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
               </div>
               <div>
-                <label className="text-xs text-muted-foreground">Domain (optional)</label>
-                <input value={form.domain} onChange={(e) => setForm({ ...form, domain: e.target.value })} placeholder="app.example.com" className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+                <label className="text-xs text-muted-foreground">Domain *</label>
+                <input value={form.domain} onChange={(e) => setForm({ ...form, domain: e.target.value })} placeholder="app.example.com" required className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+                <p className="text-xs text-muted-foreground mt-1">Required - the app is served at this domain via reverse proxy, never at the VPS IP or localhost.</p>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Project Details (optional)</label>
+                <textarea
+                  value={form.project_details}
+                  onChange={(e) => setForm({ ...form, project_details: e.target.value })}
+                  placeholder="e.g. This is a clinic booking app. Backend needs a Postgres DB. Admin login at /admin. Main flow: patient books an appointment..."
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm h-24 resize-none"
+                />
+                <p className="text-xs text-muted-foreground mt-1">Optional - the deployer agent uses these details to know exactly how to set up the project.</p>
               </div>
             </div>
 
             <div className="border-t border-border pt-4">
               <h4 className="text-sm font-medium text-blue-400 mb-3">VPS Connection</h4>
+              {vpsAccounts.length > 0 && (
+                <div className="mb-3">
+                  <label className="text-xs text-muted-foreground">Saved VPS Account</label>
+                  <select
+                    value={savedVpsSelected}
+                    onChange={(e) => selectVpsAccount(e.target.value)}
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+                  >
+                    <option value="">-- Select a saved account --</option>
+                    {vpsAccounts.map((a, i) => (
+                      <option key={i} value={a.name || a.vps_host}>
+                        {(a.name || a.vps_host)} ({a.vps_username}@{a.vps_host})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="text-xs text-muted-foreground">Host *</label>

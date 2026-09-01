@@ -219,7 +219,7 @@ class HermesOrchestrator:
         logger.info(f"Hermes initialized with {len(self.agents)} agents")
 
     def _register_default_agents(self) -> None:
-        """Register all 30 AIED agents with real prompts and capabilities."""
+        """Register all AIED agents with real prompts and capabilities."""
         agent_definitions = [
             # ===== 1. Executive Command (CEO Team) =====
             ("hermes", "Hermes (CEO)", AgentRole.EXECUTIVE, "Executive Command", "gemini", "gemini-2.5-flash"),
@@ -240,7 +240,9 @@ class HermesOrchestrator:
             ("api-architect", "API Architect", AgentRole.ARCHITECTURE, "Engineering & Platform", "omniroute", "auto/best-coding"),
             ("architecture-planner", "Architecture Planner", AgentRole.ARCHITECTURE, "Engineering & Platform", "omniroute", "auto/best-coding"),
             ("backend-engineer", "Backend API Agent", AgentRole.DEVELOPMENT, "Engineering & Platform", "omniroute", "auto/best-coding"),
+            ("backend-helper", "Backend Helper Agent", AgentRole.DEVELOPMENT, "Engineering & Platform", "omniroute", "auto/best-coding"),
             ("frontend-engineer", "Frontend Dashboard Agent", AgentRole.DEVELOPMENT, "Engineering & Platform", "omniroute", "auto/best-coding"),
+            ("frontend-helper", "Frontend Helper Agent", AgentRole.DEVELOPMENT, "Engineering & Platform", "omniroute", "auto/best-coding"),
             ("integration-engineer", "Agent Runtime Integration", AgentRole.DEVELOPMENT, "Engineering & Platform", "omniroute", "auto/best-coding"),
 
             # ===== 4. AI Workforce Operations =====
@@ -257,6 +259,7 @@ class HermesOrchestrator:
 
             # ===== 6. Quality & Security =====
             ("qa-engineer", "QA Automation Agent", AgentRole.QUALITY, "Quality & Security", "omniroute", "auto/best-coding"),
+            ("qa-helper", "QA Helper Agent", AgentRole.QUALITY, "Quality & Security", "omniroute", "auto/best-coding"),
             ("code-reviewer", "Evaluation Agent", AgentRole.QUALITY, "Quality & Security", "omniroute", "auto/best-coding"),
             ("security-engineer", "Security Lead", AgentRole.QUALITY, "Quality & Security", "omniroute", "auto/best-coding"),
             ("performance-engineer", "Performance Engineer", AgentRole.QUALITY, "Quality & Security", "omniroute", "auto/best-coding"),
@@ -264,6 +267,7 @@ class HermesOrchestrator:
             # ===== 7. DevOps & Deployment =====
             ("build-engineer", "Build Engineer", AgentRole.DEVOPS, "DevOps & Deployment", "omniroute", "auto/best-coding"),
             ("deployment-engineer", "Deployment Agent", AgentRole.DEVOPS, "DevOps & Deployment", "omniroute", "auto/best-coding"),
+            ("deployment-helper", "Deployment Helper Agent", AgentRole.DEVOPS, "DevOps & Deployment", "omniroute", "auto/best-coding"),
             ("infrastructure-engineer", "Infrastructure Agent", AgentRole.DEVOPS, "DevOps & Deployment", "omniroute", "auto/best-coding"),
         ]
 

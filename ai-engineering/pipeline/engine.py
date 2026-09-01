@@ -662,6 +662,56 @@ class Pipeline:
                 raise
         raise RuntimeError(f"Agent {agent_id} failed after {max_retries} retries")
 
+    async def _consult_helper(
+        self,
+        helper_id: str,
+        task: "PipelineTask",
+        error_text: str,
+        attempted_fixes: str,
+        timeout: int = 180,
+    ) -> str:
+        """Consult a dedicated helper agent to diagnose a confusing / non-obvious error.
+
+        Helper agents never write code themselves - they return step-by-step
+        guidance that the pipeline feeds back to the core agent for a retry.
+        Returns "" on any failure so the pipeline can continue without it.
+        """
+        try:
+            guidance = await self._call_agent(
+                helper_id,
+                f"""DIAGNOSE THIS ERROR AND GIVE THE AGENT STEP-BY-STEP GUIDANCE.
+
+Project: {task.project_name}
+Task: {task.title}
+Task Details: {task.description}
+Project folder: {task.project_folder}
+
+ERROR / OUTPUT:
+{error_text[:3000]}
+
+FIXES ALREADY ATTEMPTED:
+{attempted_fixes[:2000]}""",
+                context={"project_name": task.project_name, "project_folder": task.project_folder},
+                timeout=timeout,
+            )
+            self._debug_log(f"_consult_helper {helper_id} returned {len(guidance)} chars")
+            return guidance
+        except Exception as e:
+            print(f"[PIPELINE] Helper consult {helper_id} failed: {e}")
+            return ""
+
+    def _describe_attempted_fixes(self, task: "PipelineTask") -> str:
+        """Summarize recently run commands + their results to feed a helper agent."""
+        lines = []
+        for c in task.commands_run[-8:]:
+            import json
+            if isinstance(c, dict):
+                cmd = c.get("command", "")
+                rc = c.get("returncode", c.get("error", "?"))
+                err = str(c.get("stderr", ""))[:200]
+                lines.append(f"$ {cmd}\n  rc={rc} stderr={err}")
+        return "\n".join(lines) if lines else "No commands recorded yet."
+
     def _get_agent_manager(self):
         """Get the agent_manager from the FastAPI app state (if available)."""
         try:
@@ -3399,10 +3449,45 @@ CRITICAL - THE PROJECT MUST BE INSTALLABLE AND RUNNABLE:
 
                 if not auto_fixed:
                     project_files = await self._read_project_files(task.project_folder, user_id=task.user_id)
-                    try:
-                        fix_result = await self._call_agent(
-                            "backend-engineer",
-                            f"""THE PROJECT FAILED TO RUN. FIX THE ERRORS:
+
+                    # On later fix attempts the error has not resolved - consult
+                    # the dedicated helper agent to diagnose the root cause and
+                    # give the core agent concrete, ordered steps to follow.
+                    helper_guidance = ""
+                    if fix_attempt > 1:
+                        task.current_agent = "backend-helper"
+                        task.current_action = f"Backend Helper diagnosing persistent error (attempt {fix_attempt})..."
+                        self._persist()
+                        error_snapshot = (
+                            f"{test_results.get('install_output', 'None')[:1000]}\n"
+                            f"{test_results.get('error_text', test_results.get('run_output', 'Unknown error'))[:1500]}"
+                        )
+                        helper_guidance = await self._consult_helper(
+                            "backend-helper",
+                            task,
+                            error_snapshot,
+                            self._describe_attempted_fixes(task),
+                        )
+                        if helper_guidance:
+                            task.history.append({
+                                "stage": "helper_consult",
+                                "message": f"Helper guidance (attempt {fix_attempt}):\n{helper_guidance[:1200]}",
+                                "timestamp": datetime.utcnow().isoformat(),
+                                "helper_id": "backend-helper",
+                                "target_agent_id": "backend-engineer",
+                            })
+                            root_cause = ""
+                            for line in helper_guidance.splitlines():
+                                l = line.strip()
+                                if l.lower().startswith("**most likely root cause") or l.lower().startswith("most likely root cause"):
+                                    root_cause = l[:200]
+                                    break
+                            notif_message = f"Backend Helper -> Backend Engineer: {root_cause}" if root_cause else "Backend Helper provided root-cause guidance. Feeding back to Backend Engineer..."
+                            self._add_notification("Helper Guidance", notif_message, task.task_id, "warning")
+                            self._persist()
+
+                    # Build the fix prompt - include helper guidance when available
+                    fix_prompt_base = f"""THE PROJECT FAILED TO RUN. FIX THE ERRORS:
 
 Project: {task.project_name}
 Task: {task.title}
@@ -3416,7 +3501,13 @@ INSTALL OUTPUT:
 {test_results.get("install_output", "None")[:1000]}
 
 RUN OUTPUT / ERRORS:
-{test_results.get("error_text", test_results.get("run_output", "Unknown error"))[:1500]}
+{test_results.get("error_text", test_results.get("run_output", "Unknown error"))[:1500]}"""
+                    if helper_guidance:
+                        fix_prompt_base += f"""
+
+HELPER AGENT ROOT-CAUSE GUIDANCE (follow this carefully - it diagnosed the real cause):
+{helper_guidance[:2500]}"""
+                    fix_prompt_base += """
 
 Fix ALL errors above so the project can run. Write corrected files and run fix commands.
 
@@ -3429,7 +3520,12 @@ code
 Also run fix commands:
 ```bash
 command
-```""",
+```"""
+
+                    try:
+                        fix_result = await self._call_agent(
+                            "backend-engineer",
+                            fix_prompt_base,
                             context={"project_name": task.project_name, "project_folder": task.project_folder},
                         )
 

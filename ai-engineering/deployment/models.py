@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # --- Enums ---
@@ -107,7 +107,8 @@ class VPSDeployment(BaseModel):
     github_repo: str
     branch: str = "main"
     commit_sha: str = ""
-    domain: str = ""
+    domain: str
+    project_details: str = ""
     vps_server_id: str = ""
     vps_host: str = ""
     vps_port: int = 22
@@ -192,7 +193,8 @@ class CreateVPSDeploymentRequest(BaseModel):
     project_name: str
     github_repo: str
     branch: str = "main"
-    domain: str = ""
+    domain: str
+    project_details: str = ""
     vps_host: str
     vps_port: int = 22
     vps_username: str
@@ -200,6 +202,31 @@ class CreateVPSDeploymentRequest(BaseModel):
     vps_password: str = ""
     deploy_mode: DeployMode = DeployMode.AUTOMATIC
     env_vars: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("domain")
+    @classmethod
+    def domain_must_be_real(cls, v: str) -> str:
+        """Require a real domain name - never an IP address or localhost.
+
+        The VPS deployer always publishes the app at the domain, so the domain
+        field is mandatory and must not be an IP or localhost/127.0.0.1.
+        """
+        import re as _re
+        value = (v or "").strip().replace("http://", "").replace("https://", "").rstrip("/")
+        if not value:
+            raise ValueError("Domain is required - the app is deployed to a domain, not an IP.")
+        lower = value.lower()
+        if lower in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
+            raise ValueError("Invalid domain: use a real domain (e.g. app.example.com), not localhost or an IP address.")
+        # Reject pure IPv4 / IPv6 addresses
+        if _re.match(r"^\d{1,3}(\.\d{1,3}){3}$", value):
+            raise ValueError("Invalid domain: use a real domain, not an IP address.")
+        looks_ipv6 = ":" in value or value.startswith("[")
+        if looks_ipv6:
+            raise ValueError("Invalid domain: use a real domain, not an IP address.")
+        if not _re.match(r"^(?!-)[a-zA-Z0-9-]{1,63}(\.[a-zA-Z0-9-]{1,63})+$", value):
+            raise ValueError("Invalid domain format - must be a domain name like app.example.com")
+        return value
 
 
 class DeploymentPlanResponse(BaseModel):

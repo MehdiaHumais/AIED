@@ -761,23 +761,35 @@ function MonitorPage() {
                         {expanded.history && expanded.history.length > 0 ? (
                           <div className="space-y-2">
                             {expanded.history.map((h, i) => (
-                              <div key={i} className="flex gap-3 items-start">
-                                <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
-                                  h.stage === "failed" ? "bg-red-500" :
-                                  h.stage === "completed" ? "bg-green-500" :
-                                  "bg-primary"
-                                }`} />
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-xs">{h.message}</p>
-                                  <div className="flex items-center gap-2 mt-0.5">
-                                    <span className="text-[10px] text-muted-foreground">{formatTime(h.timestamp)}</span>
-                                    <span className={`text-[10px] px-1 py-0 rounded ${
-                                      h.stage === "failed" ? "bg-red-500/10 text-red-400" :
-                                      h.stage === "completed" ? "bg-green-500/10 text-green-400" :
-                                      "bg-secondary text-muted-foreground"
-                                    }`}>{h.stage}</span>
+                              <div key={i}>
+                                {h.stage === "helper_consult" ? (
+                                  <div className="rounded-lg border border-purple-500/30 bg-purple-500/5 p-3">
+                                    <div className="flex items-center gap-2 mb-1.5">
+                                      <span className="text-xs font-bold text-purple-400">Helper Guidance</span>
+                                      <span className="text-[10px] text-muted-foreground">{formatTime(h.timestamp)}</span>
+                                    </div>
+                                    <div className="text-xs text-foreground whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: formatMd(h.message.replace(/^Helper guidance \(attempt \d+\):\s*/, "")) }} />
                                   </div>
-                                </div>
+                                ) : (
+                                  <div className="flex gap-3 items-start">
+                                    <div className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
+                                      h.stage === "failed" ? "bg-red-500" :
+                                      h.stage === "completed" ? "bg-green-500" :
+                                      "bg-primary"
+                                    }`} />
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-xs">{h.message}</p>
+                                      <div className="flex items-center gap-2 mt-0.5">
+                                        <span className="text-[10px] text-muted-foreground">{formatTime(h.timestamp)}</span>
+                                        <span className={`text-[10px] px-1 py-0 rounded ${
+                                          h.stage === "failed" ? "bg-red-500/10 text-red-400" :
+                                          h.stage === "completed" ? "bg-green-500/10 text-green-400" :
+                                          "bg-secondary text-muted-foreground"
+                                        }`}>{h.stage}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                             ))}
                           </div>

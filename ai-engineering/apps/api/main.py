@@ -308,6 +308,7 @@ from apps.api.auth import (
     init_auth, create_user, login_user, get_user_from_token,
     approve_user, reject_user, delete_user, get_pending_users, get_all_users,
     send_approval_email, send_admin_notification,
+    _hash_password, _verify_password,
 )
 
 @app.post("/api/auth/signup")
@@ -417,6 +418,33 @@ async def auth_update_profile(data: dict):
     if hasattr(safe.get("created_at"), "isoformat"):
         safe["created_at"] = safe["created_at"].isoformat()
     return {"user": safe}
+
+
+@app.post("/api/auth/change-password")
+async def auth_change_password(data: dict):
+    """Change a user's password (requires current password)."""
+    memory = app_state.get("memory")
+    token = data.get("token", "")
+    current = data.get("current_password", "")
+    new_password = data.get("new_password", "").strip()
+    if not token:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    user_id = get_user_from_token(token)
+    if not user_id:
+        return JSONResponse({"error": "Invalid or expired token"}, status_code=401)
+    if not current:
+        return JSONResponse({"error": "Current password is required"}, status_code=400)
+    if len(new_password) < 6:
+        return JSONResponse({"error": "New password must be at least 6 characters"}, status_code=400)
+    user = await memory.get_user_by_id(user_id)
+    if not user:
+        return JSONResponse({"error": "User not found"}, status_code=404)
+    if not _verify_password(current, user.get("password_hash", "")):
+        return JSONResponse({"error": "Current password is incorrect"}, status_code=400)
+    result = await memory.update_user(user_id, {"password_hash": _hash_password(new_password)})
+    if not result:
+        return JSONResponse({"error": "User not found"}, status_code=404)
+    return {"status": "updated"}
 
 
 @app.get("/api/auth/pending-users")
@@ -1071,6 +1099,43 @@ async def get_all_pipelines():
     for tid, task in pipeline.tasks.items():
         pipelines[tid] = task.to_dict()
     return {"pipelines": pipelines}
+
+
+@app.get("/api/helper-activity")
+async def get_helper_activity(user_id: str = ""):
+    """Recent helper-agent interventions across pipeline tasks (live feed)."""
+    pipeline: Pipeline = app_state["pipeline"]
+    entries = []
+    HELPER_NAMES = {
+        "backend-helper": "Backend Helper",
+        "frontend-helper": "Frontend Helper",
+        "qa-helper": "QA Helper",
+        "deployment-helper": "Deployment Helper",
+    }
+    AGENT_NAMES = {
+        "backend-engineer": "Backend Engineer",
+        "frontend-engineer": "Frontend Engineer",
+        "qa-engineer": "QA Engineer",
+        "deployment-engineer": "Deployment Engineer",
+    }
+    for tid, task in pipeline.tasks.items():
+        if user_id and task.user_id != user_id:
+            continue
+        for h in getattr(task, "history", []) or []:
+            if h.get("stage") != "helper_consult":
+                continue
+            helper_id = h.get("helper_id", "")
+            target_id = h.get("target_agent_id", "")
+            entries.append({
+                "task_id": tid,
+                "task_title": task.title,
+                "helper_name": HELPER_NAMES.get(helper_id, helper_id),
+                "target_name": AGENT_NAMES.get(target_id, target_id),
+                "message": h.get("message", ""),
+                "timestamp": h.get("timestamp", ""),
+            })
+    entries.sort(key=lambda e: e.get("timestamp", ""), reverse=True)
+    return {"entries": entries[:50]}
 
 
 @app.post("/api/pipeline/{task_id}/start")
@@ -3410,6 +3475,49 @@ async def company_delete_project(project_id: str, user_id: str = ""):
         if _company().delete_project(project_id):
             return {"status": "deleted"}
     return JSONResponse({"error": "Project not found"}, status_code=404)
+
+
+@app.get("/api/company/vps-credentials")
+async def company_get_vps_credentials(user_id: str = ""):
+    """Get all saved VPS credential accounts for a user."""
+    if not user_id:
+        return {"vps_credentials": []}
+    return {"vps_credentials": _company().get_user_vps_credentials(user_id)}
+
+
+@app.post("/api/company/vps-credentials")
+async def company_add_vps_credentials(data: dict):
+    """Add a named VPS credential account for a user."""
+    user_id = data.get("user_id", "")
+    if not user_id:
+        return JSONResponse({"error": "user_id is required"}, status_code=400)
+    accounts = _company().add_user_vps_account(user_id, data.get("account", data))
+    return {"status": "added", "vps_credentials": accounts}
+
+
+@app.put("/api/company/vps-credentials")
+async def company_update_vps_credentials(data: dict):
+    """Update a VPS credential account by index, or replace the whole list."""
+    user_id = data.get("user_id", "")
+    if not user_id:
+        return JSONResponse({"error": "user_id is required"}, status_code=400)
+    index = data.get("index", None)
+    if index is not None and isinstance(index, int):
+        accounts = _company().update_user_vps_account(user_id, index, data.get("account", data))
+    else:
+        accounts = _company().set_user_vps_credentials(user_id, data.get("vps_credentials", []))
+    return {"status": "updated", "vps_credentials": accounts}
+
+
+@app.delete("/api/company/vps-credentials")
+async def company_delete_vps_credentials(data: dict):
+    """Delete a VPS credential account by index."""
+    user_id = data.get("user_id", "")
+    index = data.get("index", None)
+    if not user_id or not isinstance(index, int):
+        return JSONResponse({"error": "user_id and index are required"}, status_code=400)
+    accounts = _company().delete_user_vps_account(user_id, index)
+    return {"status": "deleted", "vps_credentials": accounts}
 
 
 @app.get("/api/company/search")

@@ -32,6 +32,15 @@ interface Task {
   assigned_to: string | null
 }
 
+interface HelperActivity {
+  task_id: string
+  task_title: string
+  helper_name: string
+  target_name: string
+  message: string
+  timestamp: string
+}
+
 const statusColors: Record<string, string> = {
   working: "bg-green-500",
   idle: "bg-yellow-500",
@@ -58,6 +67,7 @@ export default function DashboardPage() {
   const [dashboard, setDashboard] = useState<DashboardData | null>(null)
   const [agents, setAgents] = useState<Agent[]>([])
   const [tasks, setTasks] = useState<Task[]>([])
+  const [helperActivities, setHelperActivities] = useState<HelperActivity[]>([])
   const [loading, setLoading] = useState(true)
   const pollRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -67,11 +77,13 @@ export default function DashboardPage() {
       fetch(`http://127.0.0.1:8001/api/dashboard${uid}`).then((r) => r.json()),
       fetch("http://127.0.0.1:8001/api/agents").then((r) => r.json()),
       fetch("http://127.0.0.1:8001/api/tasks").then((r) => r.json()),
+      fetch(`http://127.0.0.1:8001/api/helper-activity${uid}`).then((r) => r.json()).catch(() => ({ entries: [] })),
     ])
-      .then(([dashData, agentData, taskData]) => {
+      .then(([dashData, agentData, taskData, helperData]) => {
         setDashboard(dashData)
         setAgents(agentData.agents || [])
         setTasks(taskData.tasks || [])
+        setHelperActivities(helperData.entries || [])
         setLoading(false)
       })
       .catch(() => setLoading(false))
@@ -86,11 +98,13 @@ export default function DashboardPage() {
         fetch(`http://127.0.0.1:8001/api/dashboard${uid}`).then((r) => r.json()).catch(() => null),
         fetch("http://127.0.0.1:8001/api/agents").then((r) => r.json()).catch(() => null),
         fetch("http://127.0.0.1:8001/api/tasks").then((r) => r.json()).catch(() => null),
+        fetch(`http://127.0.0.1:8001/api/helper-activity${uid}`).then((r) => r.json()).catch(() => ({ entries: [] })),
       ])
-        .then(([dashData, agentData, taskData]) => {
+        .then(([dashData, agentData, taskData, helperData]) => {
           if (dashData) setDashboard(dashData)
           if (agentData && agentData.agents) setAgents(agentData.agents)
           if (taskData && taskData.tasks) setTasks(taskData.tasks)
+          if (helperData && helperData.entries) setHelperActivities(helperData.entries)
         })
         .catch(() => {})
     }, 5000)
@@ -210,6 +224,53 @@ export default function DashboardPage() {
                   </span>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-purple-500/30 bg-card p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <span className="text-purple-400">✦</span>
+              Helper Guidance Feed
+            </h2>
+            <span className="text-xs text-muted-foreground bg-purple-500/10 text-purple-400 px-2 py-1 rounded">
+              {helperActivities.length} intervention{helperActivities.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          {helperActivities.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No helper interventions yet. When a core agent gets stuck on a confusing error, its helper will diagnose the root cause and appear here.
+            </p>
+          ) : (
+            <div className="space-y-2 max-h-80 overflow-y-auto">
+              {helperActivities.slice(0, 20).map((entry, i) => {
+                const rootCauseMatch = entry.message.match(/\*\*Most Likely Root Cause:\*\*\s*([^\n]+)/i) || entry.message.match(/Most Likely Root Cause:\s*([^\n]+)/i)
+                const rootCause = rootCauseMatch ? rootCauseMatch[1].trim() : ""
+                return (
+                  <div key={i} className="rounded-lg border border-border bg-background/50 p-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-purple-400">{entry.helper_name}</span>
+                      <span className="text-xs text-muted-foreground">→</span>
+                      <span className="text-xs font-semibold">{entry.target_name}</span>
+                      <span className="text-[10px] text-muted-foreground ml-auto">
+                        {entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : ""}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5 truncate">{entry.task_title}</p>
+                    <p className="text-xs mt-1.5">
+                      {rootCause ? (
+                        <>
+                          <span className="text-[10px] font-bold text-purple-400 uppercase">Root cause: </span>
+                          {rootCause}
+                        </>
+                      ) : (
+                        "Provided step-by-step guidance"
+                      )}
+                    </p>
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>

@@ -184,11 +184,17 @@ class VPSEngine:
 
     async def create_deployment(self, req) -> VPSDeployment:
         """Create a new deployment from a request."""
+        # The domain is mandatory - the deploy agent ALWAYS publishes the app
+        # at the domain (nginx reverse proxy), never at the IP or localhost.
+        domain = (req.domain or "").strip().replace("http://", "").replace("https://", "").rstrip("/")
+        if not domain:
+            raise ValueError("Domain is required - the app is deployed to a domain, not an IP.")
         dep = VPSDeployment(
             project_name=req.project_name,
             github_repo=req.github_repo,
             branch=req.branch,
-            domain=req.domain,
+            domain=domain,
+            project_details=req.project_details,
             deploy_mode=req.deploy_mode,
             status=VPSDeployStatus.PENDING,
             env_vars=req.env_vars,
@@ -583,12 +589,18 @@ class VPSEngine:
 
         try:
             stack = dep.detected_stack
-            plan_prompt = f"""Generate a deployment plan for this project:
+            project_details = dep.project_details.strip() if dep.project_details else "(no project details provided)"
+            plan_prompt = f"""Generate a deployment plan for this project.
+
+CRITICAL DEPLOYMENT RULE: The app MUST be deployed and served at the DOMAIN below using an Nginx reverse proxy. NEVER use the VPS IP address or localhost as the public address - the domain is the mandatory public URL. configure_nginx must be used with this exact domain.
 
 Project: {dep.project_name}
 Repository: {dep.github_repo}
 Branch: {dep.branch}
-Domain: {dep.domain or "not set"}
+Domain (MANDATORY): {dep.domain}
+
+Project Details (from the user - follow these requirements):
+{project_details}
 
 Detected Stack:
 - Frontend: {stack.get('frontend', 'none')}
@@ -608,6 +620,8 @@ Generate a clear deployment plan with:
 2. Which tools to use for each step
 3. Any warnings about missing env vars or potential issues
 4. Estimated total steps
+
+The plan MUST include a configure_nginx step binding {dep.domain} and a configure_ssl step for {dep.domain}.
 
 Output as a readable plan, then on a new line output JSON like:
 PLAN_JSON: [{{"step": "name", "tool": "tool_name", "dangerous": false, "description": "what it does"}}]
@@ -890,9 +904,9 @@ PLAN_JSON: [{{"step": "name", "tool": "tool_name", "dangerous": false, "descript
         self._update_step(dep.id, "configure_nginx", StepStatus.RUNNING)
 
         if not dep.domain or not dep.backend_port:
-            self._update_step(dep.id, "configure_nginx", StepStatus.SKIPPED, "No domain configured")
-            self._emit_log(dep.id, "configure_nginx", "No domain, skipping Nginx", "info")
-            return
+            self._update_step(dep.id, "configure_nginx", StepStatus.FAILED, "No domain/backend port - domain is required")
+            self._emit_log(dep.id, "configure_nginx", "Domain or backend port missing - reverse proxy cannot be configured", "error")
+            raise RuntimeError("Domain is required for the reverse proxy - deployment must be served at the domain, not an IP.")
 
         try:
             await self._run_tool(dep.id, "nginx", lambda tools: tools.configure_nginx(dep.domain, dep.backend_port))
