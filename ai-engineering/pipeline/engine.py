@@ -138,6 +138,7 @@ class PipelineTask:
         self.history: list[dict] = []
         self.prebuilt_action = ""
         self.rejection_count = 0
+        self.build_rejection_count = 0
         self.user_issues: list[dict] = []
         self.current_agent = ""
         self.current_action = ""
@@ -172,6 +173,7 @@ class PipelineTask:
             "dev_package": self.dev_package,
             "prebuilt_action": self.prebuilt_action,
             "rejection_count": self.rejection_count,
+            "build_rejection_count": self.build_rejection_count,
             "user_issues": self.user_issues,
             "current_agent": self.current_agent,
             "current_action": self.current_action,
@@ -228,6 +230,7 @@ def _load_from_dict(data: dict) -> PipelineTask:
     pt.history = data.get("history", [])
     pt.prebuilt_action = data.get("prebuilt_action", "")
     pt.rejection_count = data.get("rejection_count", 0)
+    pt.build_rejection_count = data.get("build_rejection_count", 0)
     pt.user_issues = data.get("user_issues", [])
     pt.current_agent = data.get("current_agent", "")
     pt.current_action = data.get("current_action", "")
@@ -2549,6 +2552,45 @@ export async function POST() {
         has_app_root = os.path.isfile(os.path.join(folder, "src", "App.jsx")) or os.path.isfile(os.path.join(folder, "src", "App.tsx"))
         vite_app = has_index_html and not has_main_jsx and has_app_root
 
+        # --- catch-all: if scripts are empty or only contain non-command
+        #     keys (e.g. {"prepare": "...", "postinstall": "..."}), infer
+        #     from dependencies / file structure and fill sensible defaults.
+        has_any_useful_script = bool(
+            scripts.get("build") or scripts.get("dev") or scripts.get("start")
+            or scripts.get("test") or scripts.get("serve") or scripts.get("preview")
+            or scripts.get("lint") or scripts.get("format")
+        )
+        if not has_any_useful_script:
+            dep_names = set(deps.keys())
+            pkg_name = (pkg.get("name") or "").lower()
+            if next_app:
+                scripts.update({"dev": "next dev", "build": "next build", "start": "next start"})
+            elif vite_app:
+                scripts.update({"dev": "vite", "build": "vite build", "preview": "vite preview"})
+            elif "svelte" in dep_names or "sveltejs" in pkg_name:
+                scripts.update({"dev": "vite dev", "build": "vite build", "preview": "vite preview"})
+            elif "@angular/core" in dep_names:
+                scripts.update({"start": "ng serve", "build": "ng build", "test": "ng test"})
+            elif "express" in dep_names or "fastify" in dep_names or "koa" in dep_names:
+                scripts.update({"start": "node index.js", "dev": "node index.js"})
+                if "nodemon" not in dep_names:
+                    pkg.setdefault("devDependencies", {})["nodemon"] = "^3.1.0"
+                    scripts["dev"] = "npx nodemon index.js"
+            elif "react" in dep_names:
+                if "vite" in dep_names:
+                    scripts.update({"dev": "vite", "build": "vite build", "preview": "vite preview"})
+                else:
+                    scripts.update({"dev": "vite", "build": "vite build"})
+                    pkg.setdefault("devDependencies", {})["vite"] = "^5.4.0"
+            else:
+                # absolute fallback: at minimum give the project a "main" entry
+                # so the completeness check doesn't fail
+                if not pkg.get("main"):
+                    pkg["main"] = "index.js"
+            if scripts:
+                pkg["scripts"] = scripts
+            changed = True
+
         if next_app:
             if "next" not in deps:
                 pkg.setdefault("dependencies", {})["next"] = "^14.2.0"
@@ -2655,7 +2697,12 @@ export async function POST() {
         has_pyproj = os.path.exists(os.path.join(folder, "pyproject.toml"))
         has_index_html = os.path.exists(os.path.join(folder, "index.html"))
 
-        if has_pkg and not (pkg_scripts.get("build") or pkg_scripts.get("dev") or pkg_scripts.get("start") or pkg_main):
+        has_runnable_scripts = bool(
+            pkg_scripts.get("build") or pkg_scripts.get("dev") or pkg_scripts.get("start")
+            or pkg_scripts.get("test") or pkg_scripts.get("serve") or pkg_scripts.get("preview")
+            or pkg_scripts.get("lint") or pkg_scripts.get("format")
+        )
+        if has_pkg and not has_runnable_scripts and not pkg_main:
             return ("package.json exists but has NO build/dev/start scripts and no 'main' entry, so the "
                     "project cannot be installed, built, or started. Re-output the COMPLETE project "
                     "INCLUDING a package.json with a proper 'scripts' section (e.g. "
@@ -2707,7 +2754,12 @@ export async function POST() {
         has_pyproj = (await _has_file("pyproject.toml")) != ""
         has_index_html = (await _has_file("index.html")) != ""
 
-        if has_pkg and not (pkg_scripts.get("build") or pkg_scripts.get("dev") or pkg_scripts.get("start") or pkg_main):
+        has_runnable_scripts_agent = bool(
+            pkg_scripts.get("build") or pkg_scripts.get("dev") or pkg_scripts.get("start")
+            or pkg_scripts.get("test") or pkg_scripts.get("serve") or pkg_scripts.get("preview")
+            or pkg_scripts.get("lint") or pkg_scripts.get("format")
+        )
+        if has_pkg and not has_runnable_scripts_agent and not pkg_main:
             return ("package.json exists but has NO build/dev/start scripts and no 'main' entry, so the "
                     "project cannot be installed, built, or started. Re-output the COMPLETE project "
                     "INCLUDING a package.json with a proper 'scripts' section (e.g. "
@@ -3576,21 +3628,21 @@ command
             completeness_issue = await self._check_build_completeness(task) if has_files else ""
             if completeness_issue:
                 print(f"[PIPELINE] Completeness gate: {completeness_issue[:200]}")
-                task.rejection_count += 1
+                task.build_rejection_count += 1
                 task.check_output = completeness_issue
-                task.add_history("checking", f"Incomplete project - sending back to builder (attempt #{task.rejection_count})")
-                if task.rejection_count > 1:
+                task.add_history("checking", f"Incomplete project - sending back to builder (attempt #{task.build_rejection_count})")
+                if task.build_rejection_count > 3:
                     task.stage = PipelineStage.FAILED
                     task.current_agent = ""
                     task.current_action = ""
-                    task.error = f"Project incomplete after {task.rejection_count} attempts: {completeness_issue[:200]}"
+                    task.error = f"Project incomplete after {task.build_rejection_count} attempts: {completeness_issue[:200]}"
                     task.add_history("failed", f"Incomplete project: {completeness_issue[:200]}")
                     self._add_notification("Build Failed", "Project is incomplete (missing required scaffolding).", task.task_id, "error")
                 else:
                     task.stage = PipelineStage.BUILDING
                     task.current_agent = ""
                     task.current_action = ""
-                    task.add_history("building", f"Incomplete project, re-building (attempt #{task.rejection_count}).")
+                    task.add_history("building", f"Incomplete project, re-building (attempt #{task.build_rejection_count}).")
                     self._add_notification("Build Needs Fixes", "Project is incomplete. Re-building...", task.task_id)
                     self._spawn_task(self._rerun_building(task, completeness_issue), task.task_id, task.user_id, f"Rework: {task.title}")
                 self._persist()
@@ -3620,26 +3672,26 @@ command
                 missing_scaffold = web_root is None and self._looks_like_web_app(task.project_folder)
                 if missing_scaffold:
                     print(f"[PIPELINE] Web app detected but NO package.json => NOT auto-approving")
-                    task.rejection_count += 1
+                    task.build_rejection_count += 1
                     error_msg = ("The project contains web app files (app/, src/, index.html or React/Next components) "
                                  "but is MISSING package.json and project scaffolding, so it cannot be installed, built, "
                                  "or browser-tested. Re-output the COMPLETE project INCLUDING package.json with correct "
                                  "build/start scripts (e.g. \"build\": \"next build\" / \"dev\": \"next dev\" for Next.js, "
                                  "or \"vite build\" / \"vite\" for Vite).")
                     task.check_output = error_msg
-                    task.add_history("checking", f"Web app missing scaffolding - re-building (attempt #{task.rejection_count})")
-                    if task.rejection_count > 1:
+                    task.add_history("checking", f"Web app missing scaffolding - re-building (attempt #{task.build_rejection_count})")
+                    if task.build_rejection_count > 3:
                         task.stage = PipelineStage.FAILED
                         task.current_agent = ""
                         task.current_action = ""
-                        task.error = f"Web app missing scaffolding after {task.rejection_count} attempts: {error_msg[:200]}"
+                        task.error = f"Web app missing scaffolding after {task.build_rejection_count} attempts: {error_msg[:200]}"
                         task.add_history("failed", f"Missing scaffolding: {error_msg[:200]}")
                         self._add_notification("Build Failed", "Web app missing package.json scaffolding.", task.task_id, "error")
                     else:
                         task.stage = PipelineStage.BUILDING
                         task.current_agent = ""
                         task.current_action = ""
-                        task.add_history("building", f"Web app missing scaffolding, re-building (attempt #{task.rejection_count}).")
+                        task.add_history("building", f"Web app missing scaffolding, re-building (attempt #{task.build_rejection_count}).")
                         self._add_notification("Build Needs Fixes", "Web app missing package.json. Re-building...", task.task_id)
                         self._spawn_task(self._rerun_building(task, error_msg), task.task_id, task.user_id, f"Fix build: {task.title}")
                 else:
@@ -3660,35 +3712,35 @@ command
                 # FILES WERE GENERATED BUT THE PROJECT WAS NEVER TESTED.
                 # Do NOT fake-approve - send back to the builder with a clear error.
                 print(f"[PIPELINE] WARNING: files exist but NO test ran => sending back to builder (untested)")
-                task.rejection_count += 1
+                task.build_rejection_count += 1
                 error_msg = ("The project files were generated but the project could not be built or tested - "
                              "no runnable project was detected (no package.json, requirements.txt, pyproject.toml, "
                              "pom.xml or Cargo.toml at the project root or in backend/frontend subfolders, "
                              "and no start/build command could be run). "
                              "Please fix the project structure and re-output the COMPLETE files so the tester can actually run them.")
                 task.check_output = error_msg
-                task.add_history("checking", f"Build untested - sending back to builder (attempt #{task.rejection_count})")
-                if task.rejection_count > 1:
+                task.add_history("checking", f"Build untested - sending back to builder (attempt #{task.build_rejection_count})")
+                if task.build_rejection_count > 3:
                     task.stage = PipelineStage.FAILED
                     task.current_agent = ""
                     task.current_action = ""
-                    task.error = f"Build could not be tested after {task.rejection_count} attempts: {error_msg}"
+                    task.error = f"Build could not be tested after {task.build_rejection_count} attempts: {error_msg}"
                     task.add_history("failed", f"Too many untested builds: {error_msg[:200]}")
                     self._add_notification("Build Failed", "Files generated but the project could not be built or tested.", task.task_id, "error")
                 else:
                     task.stage = PipelineStage.BUILDING
                     task.current_agent = ""
                     task.current_action = ""
-                    task.add_history("building", f"Build had no runnable project, re-building (attempt #{task.rejection_count}).")
+                    task.add_history("building", f"Build had no runnable project, re-building (attempt #{task.build_rejection_count}).")
                     self._add_notification("Build Needs Fixes", "Files generated but the project could not be built or tested. Re-building...", task.task_id)
                     self._spawn_task(self._rerun_building(task, error_msg), task.task_id, task.user_id, f"Fix build: {task.title}")
             else:
                 # BUILD FAILED after auto-fix attempts
-                task.rejection_count += 1
+                task.build_rejection_count += 1
                 remaining_errors = "\n".join(test_results.get("errors", ["Unknown error"])[:3])
-                if task.rejection_count > 1:
+                if task.build_rejection_count > 3:
                     task.stage = PipelineStage.FAILED
-                    task.error = f"Build failed after {task.rejection_count} attempts: {remaining_errors[:300]}"
+                    task.error = f"Build failed after {task.build_rejection_count} attempts: {remaining_errors[:300]}"
                     task.current_agent = ""
                     task.current_action = ""
                     task.add_history("failed", f"Too many failures: {remaining_errors[:200]}")
@@ -3697,8 +3749,8 @@ command
                     task.stage = PipelineStage.BUILDING
                     task.current_agent = ""
                     task.current_action = ""
-                    task.add_history("building", f"Build had errors, re-building (attempt #{task.rejection_count}).")
-                    self._add_notification("Build Needs Fixes", f"Found errors. Re-building (attempt #{task.rejection_count}).", task.task_id)
+                    task.add_history("building", f"Build had errors, re-building (attempt #{task.build_rejection_count}).")
+                    self._add_notification("Build Needs Fixes", f"Found errors. Re-building (attempt #{task.build_rejection_count}).", task.task_id)
                     self._spawn_task(self._rerun_building(task, remaining_errors), task.task_id, task.user_id, f"Fix remaining errors: {task.title}")
 
             self._persist()
@@ -4622,6 +4674,7 @@ ASSIGN:
         task.stage = PipelineStage.IDLE
         task.error = ""
         task.rejection_count = 0
+        task.build_rejection_count = 0
         task.plan_content = ""
         task.plan_approved = False
         task.check_output = ""
