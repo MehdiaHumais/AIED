@@ -154,6 +154,12 @@ class LocalAgent {
         case "list_root_folders":
           r = this.listRootFolders(params);
           break;
+        case "clone_repository":
+          r = await this.cloneRepository(params);
+          break;
+        case "zip_project":
+          r = await this.zipProject(params);
+          break;
         case "ping":
           r = { success: true, pong: true };
           break;
@@ -360,6 +366,88 @@ class LocalAgent {
       child.on("error", () => {
         clearTimeout(timer);
         resolve({ success: false, exit_code: -1, stdout: "", stderr: "Failed to spawn process" });
+      });
+    });
+  }
+
+  cloneRepository(params) {
+    return new Promise((resolve) => {
+      const repoUrl = (params.repo_url || "").trim();
+      let target = (params.target_folder || "").trim();
+      if (!repoUrl) return resolve({ success: false, error: "No repository URL provided" });
+
+      this.log(`Cloning ${repoUrl}...`);
+
+      const child = exec(
+        `git clone "${repoUrl}"`,
+        { cwd: target || os.homedir(), shell: true, windowsHide: true, maxBuffer: 20 * 1024 * 1024 },
+        (err, stdout, stderr) => {
+          if (err) {
+            this.log(`Clone failed: ${(stderr || "").toString()}`);
+            return resolve({ success: false, error: (stderr || stdout || "").toString().slice(0, 2000), exit_code: err.code || 1 });
+          }
+          // Derive the cloned directory: <target|homedir>/<repo-name>
+          const clean = repoUrl.replace(/\.git$/, "");
+          const repoName = (clean.split("/").filter(Boolean).pop() || "").replace(/\.git$/, "");
+          const clonePath = path.join(target || os.homedir(), repoName);
+          this.cfg.project_folder = clonePath;
+          config.save(this.cfg);
+          this.log(`Cloned to ${clonePath}`);
+          resolve({ success: true, path: clonePath, stdout: (stdout || "").toString() });
+        }
+      );
+
+      const timer = setTimeout(() => {
+        try { child.kill(); } catch (e) {}
+        resolve({ success: false, error: "Clone timed out after 300s", exit_code: -1 });
+      }, 300000);
+      child.on("exit", () => clearTimeout(timer));
+      child.on("error", () => {
+        clearTimeout(timer);
+        resolve({ success: false, exit_code: -1, stderr: "Failed to spawn git" });
+      });
+    });
+  }
+
+  zipProject(params) {
+    return new Promise((resolve) => {
+      const folder = params.project_folder || this.cfg.project_folder || "";
+      const name = params.project_name || path.basename(folder) || "project";
+      if (!folder || !fs.existsSync(folder)) {
+        return resolve({ success: false, error: "Project folder does not exist: " + folder });
+      }
+
+      const parent = path.dirname(folder);
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      const zipPath = path.join(parent, `${name}-${stamp}.zip`);
+      const safeName = `${name}-${stamp}`;
+
+      this.log(`Zipping ${folder} -> ${zipPath}`);
+
+      let cmd = "";
+      if (process.platform === "win32") {
+        cmd = `powershell -NoProfile -Command "Compress-Archive -Path '${folder}\\*' -DestinationPath '${zipPath}' -Force"`;
+      } else {
+        cmd = `cd "${parent}" && zip -r "${safeName}.zip" "${path.basename(folder)}"`;
+      }
+
+      const child = exec(cmd, { shell: true, windowsHide: true, maxBuffer: 20 * 1024 * 1024 }, (err, stdout, stderr) => {
+        if (err) {
+          this.log(`Zip failed: ${(stderr || "").toString()}`);
+          return resolve({ success: false, error: (stderr || stdout || "").toString().slice(0, 2000), exit_code: err.code || 1 });
+        }
+        this.log(`Zipped to ${zipPath}`);
+        resolve({ success: true, path: zipPath, stdout: (stdout || "").toString() });
+      });
+
+      const timer = setTimeout(() => {
+        try { child.kill(); } catch (e) {}
+        resolve({ success: false, error: "Zip timed out after 300s", exit_code: -1 });
+      }, 300000);
+      child.on("exit", () => clearTimeout(timer));
+      child.on("error", () => {
+        clearTimeout(timer);
+        resolve({ success: false, exit_code: -1, stderr: "Failed to spawn zip" });
       });
     });
   }

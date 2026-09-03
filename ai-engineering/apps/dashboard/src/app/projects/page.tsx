@@ -16,6 +16,7 @@ interface Project {
   tasks_count: number
   mode: string
   folder: string
+  repository_url?: string
   created_at: string
 }
 
@@ -135,7 +136,7 @@ export default function ProjectsPage() {
   const [agentConnected, setAgentConnected] = useState(false)
   const [agentFolder, setAgentFolder] = useState("")
 
-  const [newProject, setNewProject] = useState({ name: "", codename: "", description: "", tech_stack: "", folder: "", mode: "scratch" })
+  const [newProject, setNewProject] = useState({ name: "", codename: "", description: "", tech_stack: "", folder: "", mode: "scratch", repository_url: "" })
   const [newTask, setNewTask] = useState({ title: "", description: "", priority: "medium", project_id: "", task_mode: "developer" })
 
   const fetchData = () => {
@@ -234,8 +235,9 @@ export default function ProjectsPage() {
 
   const createProject = async () => {
     if (!newProject.name || !newProject.codename) return
-    if (newProject.mode === "prebuilt" && !newProject.folder) {
-      setError("Prebuilt mode requires a project folder. Please browse and select your existing project folder.")
+    const repoUrl = newProject.repository_url.trim()
+    if (newProject.mode === "prebuilt" && !newProject.folder && !repoUrl) {
+      setError("Prebuilt mode requires a project folder or a GitHub repository link.")
       return
     }
     setCreating(true)
@@ -255,6 +257,7 @@ export default function ProjectsPage() {
               tech_stack: newProject.tech_stack.split(",").map((s) => s.trim()).filter(Boolean),
               user_id: user?.id || "",
               mode: newProject.mode,
+              repository_url: repoUrl,
             }),
           })
           break
@@ -266,7 +269,7 @@ export default function ProjectsPage() {
       if (!res) throw lastErr
       const data = await res.json()
       if (data.project) {
-        setNewProject({ name: "", codename: "", description: "", tech_stack: "", folder: "", mode: "scratch" })
+        setNewProject({ name: "", codename: "", description: "", tech_stack: "", folder: "", mode: "scratch", repository_url: "" })
         setShowCreateProject(false)
         fetchData()
         if (newProject.folder) {
@@ -288,6 +291,39 @@ export default function ProjectsPage() {
       setError(e.message)
     }
     setCreating(false)
+  }
+
+  const cloningId = useRef<string | null>(null)
+
+  const cloneProject = async (project: Project) => {
+    try {
+      setError("")
+      const uid = user?.id || ""
+      let repoUrl = project.repository_url || ""
+      // If no URL stored yet, ask via prompt-like inline (reuse createProject state if editing)
+      if (!repoUrl) {
+        setError("This project has no GitHub repository URL. Please add one and try again.")
+        return
+      }
+      cloningId.current = project.id
+      setError("Cloning repository... please choose a destination folder in the dialog.")
+      const res = await fetch(`http://127.0.0.1:8001/api/projects/${project.id}/clone`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repository_url: repoUrl }),
+      })
+      const data = await res.json()
+      if (data.result?.success) {
+        setError(`Repository cloned to: ${data.result.path}`)
+      } else {
+        setError(data.result?.error || data.error || "Clone failed")
+      }
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      cloningId.current = null
+      fetchData()
+    }
   }
 
   const createTask = async () => {
@@ -598,6 +634,18 @@ export default function ProjectsPage() {
               </div>
             </div>
 
+            <div>
+              <label className="text-sm font-medium mb-1 block">
+                GitHub Repository URL <span className="text-muted-foreground font-normal">(optional — paste a link, no folder needed)</span>
+              </label>
+              <input value={newProject.repository_url} placeholder="https://github.com/user/repo"
+                onChange={(e) => setNewProject({ ...newProject, repository_url: e.target.value })}
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono" />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                You can just store the link, or click the "Clone" button on the project card afterwards to download it to your PC.
+              </p>
+            </div>
+
             <div className="flex gap-2 justify-end">
               <button onClick={() => setShowCreateProject(false)} className="rounded-lg bg-secondary px-4 py-2 text-sm">Cancel</button>
               <button onClick={createProject} disabled={creating || !newProject.name}
@@ -698,7 +746,19 @@ export default function ProjectsPage() {
                 <span>{project.tasks_count} tasks</span>
                 <span>{project.status}</span>
               </div>
-              <div className="flex gap-1">
+              {project.repository_url && (
+                <a href={project.repository_url} target="_blank" rel="noreferrer"
+                  className="block text-xs text-blue-400 hover:underline truncate">
+                  {project.repository_url}
+                </a>
+              )}
+              <div className="flex gap-1 flex-wrap">
+                {project.repository_url && !project.folder && (
+                  <button onClick={() => cloneProject(project)} disabled={cloningId.current === project.id}
+                    className="text-xs bg-emerald-600/20 text-emerald-400 px-2 py-1 rounded hover:bg-emerald-600/30 disabled:opacity-50">
+                    {cloningId.current === project.id ? "Cloning..." : "Clone"}
+                  </button>
+                )}
                 <button onClick={() => pickFolder(async (path) => {
                     await fetch(`http://127.0.0.1:8001/api/projects/${project.id}/set-folder`, {
                       method: "POST",

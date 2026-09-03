@@ -530,6 +530,7 @@ async def list_projects(user_id: str = ""):
                 "created_at": p.created_at.isoformat(),
                 "mode": getattr(p, "mode", "scratch"),
                 "folder": getattr(p, "folder", ""),
+                "repository_url": getattr(p, "repository_url", "") or "",
             }
             for p in projects
         ]
@@ -547,6 +548,11 @@ async def create_project(data: dict):
         tech_stack=data.get("tech_stack", []),
         user_id=data.get("user_id", ""),
     )
+    if data.get("repository_url"):
+        project.repository_url = data["repository_url"].strip()
+    if data.get("mode"):
+        project.mode = data["mode"]
+    _persist_both(hermes, app_state["pipeline"])
     return {
         "project": {
             "id": project.id,
@@ -559,6 +565,7 @@ async def create_project(data: dict):
             "created_at": project.created_at.isoformat(),
             "mode": getattr(project, "mode", "scratch"),
             "folder": getattr(project, "folder", ""),
+            "repository_url": getattr(project, "repository_url", "") or "",
             "user_id": getattr(project, "user_id", ""),
         }
     }
@@ -1075,6 +1082,10 @@ async def agent_command(user_id: str, command: str, data: dict):
         return await agent_manager.select_folder(user_id)
     elif command == "list_root_folders":
         return await agent_manager.list_root_folders(user_id)
+    elif command == "clone_repository":
+        return await agent_manager.clone_repository(user_id, data.get("repo_url", ""), data.get("target_folder", ""))
+    elif command == "zip_project":
+        return await agent_manager.zip_project(user_id, data.get("project_folder", ""), data.get("project_name", ""))
     else:
         return {"error": f"Unknown command: {command}"}
 
@@ -1767,6 +1778,98 @@ async def set_project_mode(project_id: str, data: dict):
     return {
         "status": "ok",
         "mode": project.mode,
+    }
+
+
+@app.post("/api/projects/{project_id}/set-repository")
+async def set_project_repository(project_id: str, data: dict):
+    """Set the GitHub repository URL for a project (no cloning)."""
+    hermes: HermesOrchestrator = app_state["hermes"]
+    pipeline: Pipeline = app_state["pipeline"]
+
+    project = hermes.projects.get(project_id)
+    if not project:
+        return {"error": "Project not found"}
+
+    project.repository_url = (data.get("repository_url") or "").strip()
+
+    _persist_both(hermes, pipeline)
+
+    return {
+        "status": "ok",
+        "repository_url": project.repository_url,
+    }
+
+
+@app.post("/api/projects/{project_id}/clone")
+async def clone_project_repo(project_id: str, data: dict):
+    """Clone the project's GitHub repo to a folder on the user's PC (via the Local Agent)."""
+    hermes: HermesOrchestrator = app_state["hermes"]
+    pipeline: Pipeline = app_state["pipeline"]
+
+    project = hermes.projects.get(project_id)
+    if not project:
+        return {"error": "Project not found"}
+
+    repo_url = data.get("repository_url") or getattr(project, "repository_url", "") or ""
+    repo_url = repo_url.strip()
+    if not repo_url:
+        return {"error": "No repository URL set"}
+
+    user_id = getattr(project, "user_id", "") or ""
+    if not user_id:
+        return {"error": "Project has no owner user_id"}
+
+    target_folder = (data.get("folder") or "").strip()
+    if not target_folder:
+        try:
+            pick = await agent_manager.select_folder(user_id)
+            if pick.get("path"):
+                target_folder = pick["path"]
+        except Exception as e:
+            print(f"[API] clone select-folder error: {e}")
+
+    result = await agent_manager.clone_repository(user_id, repo_url, target_folder)
+
+    if result.get("success") and result.get("path"):
+        project.folder = result["path"]
+        project.repository_url = repo_url
+        try:
+            await agent_manager.update_project_folder(user_id, project.folder)
+        except Exception as e:
+            print(f"[API] clone agent folder sync failed: {e}")
+        _persist_both(hermes, pipeline)
+
+    return {
+        "status": "ok" if result.get("success") else "error",
+        "result": result,
+        "folder": project.folder,
+    }
+
+
+@app.post("/api/projects/{project_id}/zip")
+async def zip_project_files(project_id: str, data: dict):
+    """Zip the project's folder on the user's PC (via the Local Agent) and save it locally."""
+    hermes: HermesOrchestrator = app_state["hermes"]
+
+    project = hermes.projects.get(project_id)
+    if not project:
+        return {"error": "Project not found"}
+
+    project_folder = getattr(project, "folder", "") or ""
+    if not project_folder:
+        return {"error": "Project has no folder set"}
+
+    user_id = getattr(project, "user_id", "") or ""
+    if not user_id:
+        return {"error": "Project has no owner user_id"}
+
+    project_name = getattr(project, "name", "") or getattr(project, "codename", "") or project_id
+
+    result = await agent_manager.zip_project(user_id, project_folder, project_name)
+    return {
+        "status": "ok" if result.get("success") else "error",
+        "result": result,
     }
 
 

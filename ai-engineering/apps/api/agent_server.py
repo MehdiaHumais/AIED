@@ -207,6 +207,23 @@ class AgentManager:
             return {"success": False, "error": "Local Agent not connected"}
         return await agent.send_command("list_root_folders", {}, timeout=30)
 
+    async def clone_repository(self, user_id: str, repo_url: str, target_folder: str = "") -> dict:
+        """Ask the Local Agent to `git clone` a repository into a target folder on the user's PC."""
+        agent = self.get_agent(user_id)
+        if not agent:
+            return {"success": False, "error": "Local Agent not connected"}
+        params = {"repo_url": repo_url, "target_folder": target_folder}
+        return await agent.send_command("clone_repository", params, timeout=300)
+
+    async def zip_project(self, user_id: str, project_folder: str = "", project_name: str = "") -> dict:
+        """Ask the Local Agent to zip a project folder on the user's PC.
+        Returns the path to the created archive."""
+        agent = self.get_agent(user_id)
+        if not agent:
+            return {"success": False, "error": "Local Agent not connected"}
+        params = {"project_folder": project_folder, "project_name": project_name}
+        return await agent.send_command("zip_project", params, timeout=300)
+
     async def notify(self, user_id: str, title: str, body: str, level: str = "info"):
         """Push a desktop notification to the user's Local Agent PC."""
         agent = self.get_agent(user_id)

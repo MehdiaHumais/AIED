@@ -171,6 +171,7 @@ function MonitorPage() {
   const [showDeployModal, setShowDeployModal] = useState<string | null>(null)
   const [deployForm, setDeployForm] = useState({ apk_path: "", package_name: "", version: "", version_code: "1", release_notes: "", app_name: "", mode: "auto", featured: false, published: false })
   const [copied, setCopied] = useState(false)
+  const [zipState, setZipState] = useState<{ taskId: string; busy: boolean; message: string } | null>(null)
 
   const fetchPipelines = async () => {
     try {
@@ -254,6 +255,28 @@ function MonitorPage() {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {}
+  }
+
+  const downloadZip = async (taskId: string) => {
+    setZipState({ taskId, busy: true, message: "Creating ZIP on your PC..." })
+    try {
+      const p = expanded
+      const projectId = p?.project_id || ""
+      if (!projectId) throw new Error("No project associated with this task")
+      const zipRes = await fetch(`http://127.0.0.1:8001/api/projects/${projectId}/zip`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      })
+      const zipData = await zipRes.json()
+      if (zipData.status === "ok" && zipData.result?.path) {
+        setZipState({ taskId, busy: false, message: `ZIP saved to: ${zipData.result.path}` })
+      } else {
+        setZipState({ taskId, busy: false, message: zipData.result?.error || zipData.error || "ZIP failed" })
+      }
+    } catch (e: any) {
+      setZipState({ taskId, busy: false, message: e.message })
+    }
   }
 
   const solveIssues = async (taskId: string) => {
@@ -450,13 +473,27 @@ function MonitorPage() {
                             <h4 className="text-xs font-bold text-green-300 uppercase tracking-wide">
                               ▶ How to Run This Project
                             </h4>
-                            <button
-                              onClick={() => copyRun(run.commands.join(" && "))}
-                              className="text-[11px] font-medium px-2 py-1 rounded-md bg-white/10 hover:bg-white/20 transition-colors"
-                            >
-                              {copied ? "✓ Copied" : "Copy"}
-                            </button>
+                            <div className="flex items-center gap-2">
+                              {expanded.project_folder && (
+                                <button
+                                  onClick={() => downloadZip(expanded.task_id)}
+                                  disabled={zipState?.busy}
+                                  className="text-[11px] font-medium px-2 py-1 rounded-md bg-emerald-500/20 hover:bg-emerald-500/30 transition-colors disabled:opacity-50"
+                                >
+                                  {zipState?.busy ? "Zipping..." : "⬇ Download ZIP"}
+                                </button>
+                              )}
+                              <button
+                                onClick={() => copyRun(run.commands.join(" && "))}
+                                className="text-[11px] font-medium px-2 py-1 rounded-md bg-white/10 hover:bg-white/20 transition-colors"
+                              >
+                                {copied ? "✓ Copied" : "Copy"}
+                              </button>
+                            </div>
                           </div>
+                          {zipState && zipState.taskId === expanded.task_id && zipState.message && !zipState.busy && (
+                            <p className="text-[11px] text-muted-foreground mb-2">{zipState.message}</p>
+                          )}
                           <div className="space-y-1.5">
                             {run.commands.map((cmd, i) => (
                               <div key={i} className="flex items-center gap-2">

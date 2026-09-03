@@ -110,6 +110,10 @@ class AIEDLocalAgent:
                 r = self.select_folder(params)
             elif cmd_type == "list_root_folders":
                 r = self.list_root_folders(params)
+            elif cmd_type == "clone_repository":
+                r = await asyncio.to_thread(self._clone_repository, params)
+            elif cmd_type == "zip_project":
+                r = await asyncio.to_thread(self._zip_project, params)
             elif cmd_type == "ping":
                 r = {"success": True, "pong": True}
             else:
@@ -334,6 +338,44 @@ class AIEDLocalAgent:
                 "stderr": stderr_str,
             }
         except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _clone_repository(self, params):
+        """Clone a git repository into a target folder on THIS MACHINE."""
+        repo_url = (params.get("repo_url") or "").strip()
+        target = (params.get("target_folder") or "").strip()
+        if not repo_url:
+            return {"success": False, "error": "No repository URL provided"}
+        try:
+            cmd = ["git", "clone", repo_url]
+            proc = subprocess.run(cmd, cwd=target or os.path.expanduser("~"), capture_output=True, text=True, timeout=300)
+            if proc.returncode != 0:
+                return {"success": False, "error": (proc.stderr or proc.stdout or "")[:2000], "exit_code": proc.returncode}
+            clean = repo_url[:-4] if repo_url.endswith(".git") else repo_url
+            repo_name = clean.rstrip("/").split("/")[-1]
+            clone_path = os.path.join(target or os.path.expanduser("~"), repo_name)
+            self.cfg["project_folder"] = clone_path
+            config.save(self.cfg)
+            print(f"[AIED Agent] Cloned to {clone_path}")
+            return {"success": True, "path": clone_path, "stdout": proc.stdout[:2000]}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def _zip_project(self, params):
+        """Zip a project folder on THIS MACHINE and return the archive path."""
+        folder = (params.get("project_folder") or "").strip() or self.cfg.get("project_folder", "")
+        name = (params.get("project_name") or "").strip() or os.path.basename(folder.rstrip("/\\")) or "project"
+        if not folder or not os.path.isdir(folder):
+            return {"success": False, "error": f"Project folder does not exist: {folder}"}
+        try:
+            parent = os.path.dirname(folder.rstrip("/\\"))
+            stamp = time.strftime("%Y-%m-%d-%H-%M-%S")
+            zip_path = os.path.join(parent, f"{name}-{stamp}.zip")
+            shutil.make_archive(zip_path[:-4], "zip", folder)
+            print(f"[AIED Agent] Zipped to {zip_path}")
+            return {"success": True, "path": zip_path}
+        except Exception as e:
+            fname = (params.get("project_folder") or "").strip()
             return {"success": False, "error": str(e)}
 
     def select_folder(self, params):
