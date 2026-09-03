@@ -112,6 +112,41 @@ function formatTime(ts: string): string {
   }
 }
 
+// Derive "how to run" instructions from the commands the agent actually ran.
+function buildRunInstructions(p: PipelineStatus): { folder: string; commands: string[]; url?: string } | null {
+  if (!p || !p.commands_run || p.commands_run.length === 0) return null
+  const cmds = p.commands_run.filter((c) => c && c.command)
+  if (cmds.length === 0) return null
+
+  // The agent typically runs a build then a start. Prefer the last start/dev command.
+  const isStart = (cmd: string) =>
+    /npm (run )?(start|dev|preview|serve)\b/.test(cmd) ||
+    /node /.test(cmd) ||
+    /py |python /.test(cmd) ||
+    /flutter run/.test(cmd) ||
+    /uvicorn|gunicorn/.test(cmd)
+
+  let runCmd = cmds.map((c) => c.command).filter(isStart).pop()
+  if (!runCmd) {
+    const first = cmds[0]
+    runCmd = first.command
+  }
+
+  // Normalize to the least surprising start command for web apps.
+  const scripts = runCmd.match(/npm run (dev|dev:.*|start|preview|serve|build)\b/)
+  if (scripts && p.project_folder) {
+    const script = scripts[1]
+    if (script === "start") runCmd = "npm start"
+    else if (script === "build") runCmd = "npm run dev"
+    else runCmd = `npm run ${script}`
+  }
+
+  const commands: string[] = []
+  if (p.project_folder) commands.push(`cd "${p.project_folder}"`)
+  commands.push(runCmd)
+  return { folder: p.project_folder, commands }
+}
+
 export default function MonitorPageWrapper() {
   return (
     <Suspense fallback={<DashboardLayout><div className="p-6 text-muted-foreground">Loading monitor...</div></DashboardLayout>}>
@@ -135,6 +170,7 @@ function MonitorPage() {
   const [issueError, setIssueError] = useState("")
   const [showDeployModal, setShowDeployModal] = useState<string | null>(null)
   const [deployForm, setDeployForm] = useState({ apk_path: "", package_name: "", version: "", version_code: "1", release_notes: "", app_name: "", mode: "auto", featured: false, published: false })
+  const [copied, setCopied] = useState(false)
 
   const fetchPipelines = async () => {
     try {
@@ -210,6 +246,14 @@ function MonitorPage() {
     })
     setPrebuiltDesc("")
     fetchPipelines()
+  }
+
+  const copyRun = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {}
   }
 
   const solveIssues = async (taskId: string) => {
@@ -395,6 +439,42 @@ function MonitorPage() {
                         style={{ width: `${getProgress(expanded.stage)}%` }}
                       />
                     </div>
+
+                    {/* How to Run */}
+                    {(() => {
+                      const run = buildRunInstructions(expanded)
+                      if (!run) return null
+                      return (
+                        <div className="mt-3 rounded-lg border border-green-500/30 bg-green-500/5 px-4 py-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="text-xs font-bold text-green-300 uppercase tracking-wide">
+                              ▶ How to Run This Project
+                            </h4>
+                            <button
+                              onClick={() => copyRun(run.commands.join(" && "))}
+                              className="text-[11px] font-medium px-2 py-1 rounded-md bg-white/10 hover:bg-white/20 transition-colors"
+                            >
+                              {copied ? "✓ Copied" : "Copy"}
+                            </button>
+                          </div>
+                          <div className="space-y-1.5">
+                            {run.commands.map((cmd, i) => (
+                              <div key={i} className="flex items-center gap-2">
+                                <span className="text-[10px] text-green-400/70 font-mono">$</span>
+                                <code className="text-xs font-mono text-green-100 bg-black/30 rounded px-2 py-1 flex-1 overflow-x-auto whitespace-pre">
+                                  {cmd}
+                                </code>
+                              </div>
+                            ))}
+                          </div>
+                          {run.folder && (
+                            <p className="text-[10px] text-muted-foreground mt-2">
+                              Run from: <code className="text-green-300">{run.folder}</code>
+                            </p>
+                          )}
+                        </div>
+                      )
+                    })()}
                   </div>
 
                   {/* Tabs */}
