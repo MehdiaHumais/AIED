@@ -618,32 +618,14 @@ export default function ProjectsPage() {
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
 
             <div>
-              <label className="text-sm font-medium mb-1 block">
+              <label className="text-sm font-medium mb-2 block">
                 Project Folder {newProject.mode === "prebuilt" ? <span className="text-red-400">*</span> : <span className="text-muted-foreground">(optional)</span>}
               </label>
-              {newProject.mode === "prebuilt" && agentConnected && agentFolder && (
-                <div className="mb-2 flex items-center gap-1.5 rounded-md bg-green-500/10 border border-green-500/20 px-2.5 py-1.5 text-xs text-green-400">
-                  <Monitor className="h-3.5 w-3.5" />
-                  Local Agent detected — your project folder is: <span className="font-mono">{agentFolder}</span>
-                </div>
-              )}
               <div className="flex gap-2">
                 <input value={newProject.folder} readOnly placeholder="Click Browse to select a folder..." className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono" />
                 <button onClick={() => pickFolder((path) => setNewProject((p) => ({ ...p, folder: path })))}
                   className="rounded-lg bg-secondary px-3 py-2 text-sm">Browse</button>
               </div>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium mb-1 block">
-                GitHub Repository URL <span className="text-muted-foreground font-normal">(optional — paste a link, no folder needed)</span>
-              </label>
-              <input value={newProject.repository_url} placeholder="https://github.com/user/repo"
-                onChange={(e) => setNewProject({ ...newProject, repository_url: e.target.value })}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono" />
-              <p className="text-[11px] text-muted-foreground mt-1">
-                You can just store the link, or click the "Clone" button on the project card afterwards to download it to your PC.
-              </p>
             </div>
 
             <div className="flex gap-2 justify-end">
@@ -746,19 +728,7 @@ export default function ProjectsPage() {
                 <span>{project.tasks_count} tasks</span>
                 <span>{project.status}</span>
               </div>
-              {project.repository_url && (
-                <a href={project.repository_url} target="_blank" rel="noreferrer"
-                  className="block text-xs text-blue-400 hover:underline truncate">
-                  {project.repository_url}
-                </a>
-              )}
-              <div className="flex gap-1 flex-wrap">
-                {project.repository_url && !project.folder && (
-                  <button onClick={() => cloneProject(project)} disabled={cloningId.current === project.id}
-                    className="text-xs bg-emerald-600/20 text-emerald-400 px-2 py-1 rounded hover:bg-emerald-600/30 disabled:opacity-50">
-                    {cloningId.current === project.id ? "Cloning..." : "Clone"}
-                  </button>
-                )}
+              <div className="flex gap-1">
                 <button onClick={() => pickFolder(async (path) => {
                     await fetch(`http://127.0.0.1:8001/api/projects/${project.id}/set-folder`, {
                       method: "POST",

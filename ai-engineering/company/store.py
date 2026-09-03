@@ -205,6 +205,7 @@ class CompanyStore:
             description=data_dict.get("description", ""),
             status=data_dict.get("status", "active"),
             folder_path=data_dict.get("folder_path", ""),
+            repository_url=data_dict.get("repository_url", ""),
             deployment_url=data_dict.get("deployment_url", ""),
             tech_stack=data_dict.get("tech_stack", ""),
             tags=data_dict.get("tags", []),
@@ -271,6 +272,7 @@ class CompanyStore:
             description=data.get("description", ""),
             status=data.get("status", "active"),
             folder_path=data.get("folder_path", ""),
+            repository_url=data.get("repository_url", ""),
             deployment_url=data.get("deployment_url", ""),
             tech_stack=data.get("tech_stack", ""),
             tags=data.get("tags", []),
@@ -322,7 +324,7 @@ class CompanyStore:
         for p in self.data.projects:
             haystack = " ".join([
                 p.name, p.description, p.tech_stack,
-                p.folder_path, p.deployment_url,
+                p.folder_path, p.repository_url, p.deployment_url,
                 " ".join(p.tags),
             ]).lower()
             if q in haystack:
@@ -375,6 +377,8 @@ class CompanyStore:
                 block += f"\n   Tech: {p.tech_stack}"
             if p.folder_path:
                 block += f"\n   Folder: {p.folder_path}"
+            if p.repository_url:
+                block += f"\n   Repo: {p.repository_url}"
             parts.append(block)
         return "\n\n".join(parts)
 

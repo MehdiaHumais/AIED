@@ -39,6 +39,7 @@ class Project(BaseModel):
     description: str = ""
     status: str = "active"  # active | archived | in_development
     folder_path: str = ""
+    repository_url: str = ""
     deployment_url: str = ""
     tech_stack: str = ""
     tags: list[str] = Field(default_factory=list)

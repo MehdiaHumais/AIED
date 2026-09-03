@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useState } from "react"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { useAuth } from "@/components/auth-provider"
 import {
@@ -47,7 +47,7 @@ interface CompanyProfile {
 
 interface Project {
   id: string; name: string; description: string; status: string
-  folder_path: string; deployment_url: string; tech_stack: string
+  folder_path: string; repository_url: string; deployment_url: string; tech_stack: string
   tags: string[]; created_at: string; updated_at: string
 }
 
@@ -73,7 +73,7 @@ export default function CompanyPage() {
   const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [showProjectForm, setShowProjectForm] = useState(false)
   const [projectForm, setProjectForm] = useState({
-    name: "", description: "", status: "active", folder_path: "",
+    name: "", description: "", status: "active", folder_path: "", repository_url: "",
     deployment_url: "", tech_stack: "", tags: "",
   })
   const [savingProject, setSavingProject] = useState(false)
@@ -88,7 +88,6 @@ export default function CompanyPage() {
   const [showVpsForm, setShowVpsForm] = useState(false)
   const [savingVps, setSavingVps] = useState(false)
   const [showVpsPassword, setShowVpsPassword] = useState(false)
-  const folderInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { if (user) fetchData() }, [user?.id])
 
@@ -190,7 +189,7 @@ export default function CompanyPage() {
 
   const openAddProject = () => {
     setEditingProject(null)
-    setProjectForm({ name: "", description: "", status: "active", folder_path: "", deployment_url: "", tech_stack: "", tags: "" })
+    setProjectForm({ name: "", description: "", status: "active", folder_path: "", repository_url: "", deployment_url: "", tech_stack: "", tags: "" })
     setShowProjectForm(true)
   }
 
@@ -198,7 +197,7 @@ export default function CompanyPage() {
     setEditingProject(p)
     setProjectForm({
       name: p.name, description: p.description, status: p.status,
-      folder_path: p.folder_path, deployment_url: p.deployment_url,
+      folder_path: p.folder_path, repository_url: p.repository_url, deployment_url: p.deployment_url,
       tech_stack: p.tech_stack, tags: p.tags.join(", "),
     })
     setShowProjectForm(true)
@@ -636,6 +635,12 @@ export default function CompanyPage() {
                               <span className="truncate" title={p.folder_path}>{p.folder_path}</span>
                             </div>
                           )}
+                          {p.repository_url && (
+                            <div className="flex items-center gap-2 text-xs">
+                              <Link2 className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
+                              <a href={p.repository_url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate">{p.repository_url}</a>
+                            </div>
+                          )}
                           {p.deployment_url && (
                             <div className="flex items-center gap-2 text-xs">
                               <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
@@ -714,41 +719,13 @@ export default function CompanyPage() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-foreground mb-1.5 block">Project Folder Path</label>
+                  <label className="text-sm font-medium text-foreground mb-1.5 block">GitHub Repository URL</label>
                   <div className="flex gap-2">
                     <input className="flex-1 rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring/50 focus:border-primary/50 transition-colors"
-                      placeholder="e.g. D:\projects\leadhunter" value={projectForm.folder_path}
-                      onChange={e => setProjectForm(f => ({ ...f, folder_path: e.target.value }))} />
-                    <button
-                      type="button"
-                      onClick={() => folderInputRef.current?.click()}
-                      className="rounded-lg border border-input bg-secondary/50 px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-secondary hover:text-foreground flex items-center gap-1.5 whitespace-nowrap transition-colors"
-                    >
-                      <Folder className="h-4 w-4" /> Browse
-                    </button>
-                    <input
-                      ref={folderInputRef}
-                      type="file"
-                      className="hidden"
-                      // @ts-ignore
-                      webkitdirectory="true"
-                      directory="true"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0]
-                        if (!file) return
-                        let folderName = ""
-                        const relPath = (file as any).webkitRelativePath || ""
-                        if (relPath) {
-                          folderName = relPath.split("/")[0] || relPath.split("\\")[0]
-                        } else {
-                          folderName = file.name
-                        }
-                        setProjectForm(f => ({ ...f, folder_path: folderName }))
-                        e.target.value = ""
-                      }}
-                    />
+                      placeholder="https://github.com/user/repo" value={projectForm.repository_url}
+                      onChange={e => setProjectForm(f => ({ ...f, repository_url: e.target.value }))} />
                   </div>
-                  <p className="text-[11px] text-muted-foreground mt-1.5">Click Browse to select folder, or type/paste the full path</p>
+                  <p className="text-[11px] text-muted-foreground mt-1.5">Paste the GitHub URL of this project so the team can access its source code.</p>
                 </div>
                 <div>
                   <label className="text-sm font-medium text-foreground mb-1.5 block">Deployment URL</label>
