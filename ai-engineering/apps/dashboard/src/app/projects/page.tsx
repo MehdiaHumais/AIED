@@ -203,14 +203,32 @@ export default function ProjectsPage() {
   }, [user?.id])
 
   const pickFolder = async (setTarget: (path: string) => void) => {
-    try {
-      const qs = user?.id ? `?user_id=${user.id}` : ""
-      const res = await fetch(`http://127.0.0.1:8001/api/agent/select-folder${qs}`)
-      const data = await res.json()
-      if (data.path) setTarget(data.path)
-      else if (data.error) setError(data.error)
-    } catch (e: any) {
-      setError(e.message)
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const qs = user?.id ? `?user_id=${user.id}` : ""
+        const res = await fetch(`http://127.0.0.1:8001/api/agent/select-folder${qs}`)
+        const data = await res.json()
+        if (data.path) { setTarget(data.path); return }
+        if (data.error) {
+          if (attempt === 0 && /not connected/i.test(data.error)) {
+            setError("Agent connecting... retrying in 3s")
+            await new Promise((r) => setTimeout(r, 3000))
+            setError("")
+            continue
+          }
+          setError(data.error)
+          return
+        }
+        return
+      } catch (e: any) {
+        if (attempt === 0) {
+          setError("Agent connecting... retrying in 3s")
+          await new Promise((r) => setTimeout(r, 3000))
+          setError("")
+          continue
+        }
+        setError(e.message)
+      }
     }
   }
 
@@ -223,37 +241,48 @@ export default function ProjectsPage() {
     setCreating(true)
     setError("")
     try {
-      const res = await fetch("http://127.0.0.1:8001/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: newProject.name,
-          codename: newProject.codename,
-          description: newProject.description,
-          tech_stack: newProject.tech_stack.split(",").map((s) => s.trim()).filter(Boolean),
-          user_id: user?.id || "",
-          mode: newProject.mode,
-        }),
-      })
+      let lastErr: any
+      let res: Response | null = null
+      for (let i = 0; i < 3; i++) {
+        try {
+          res = await fetch("http://127.0.0.1:8001/api/projects", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: newProject.name,
+              codename: newProject.codename,
+              description: newProject.description,
+              tech_stack: newProject.tech_stack.split(",").map((s) => s.trim()).filter(Boolean),
+              user_id: user?.id || "",
+              mode: newProject.mode,
+            }),
+          })
+          break
+        } catch (e: any) {
+          lastErr = e
+          if (i < 2) await new Promise((r) => setTimeout(r, 2000))
+        }
+      }
+      if (!res) throw lastErr
       const data = await res.json()
       if (data.project) {
-        if (newProject.folder) {
-          await fetch(`http://127.0.0.1:8001/api/projects/${data.project.id}/set-folder`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ folder: newProject.folder }),
-          })
-        }
-        if (newProject.mode) {
-          await fetch(`http://127.0.0.1:8001/api/projects/${data.project.id}/set-mode`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ mode: newProject.mode }),
-          })
-        }
         setNewProject({ name: "", codename: "", description: "", tech_stack: "", folder: "", mode: "scratch" })
         setShowCreateProject(false)
         fetchData()
+        if (newProject.folder) {
+          fetch(`http://127.0.0.1:8001/api/projects/${data.project.id}/set-folder`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ folder: newProject.folder }),
+          }).catch(() => {})
+        }
+        if (newProject.mode) {
+          fetch(`http://127.0.0.1:8001/api/projects/${data.project.id}/set-mode`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ mode: newProject.mode }),
+          }).catch(() => {})
+        }
       }
     } catch (e: any) {
       setError(e.message)
@@ -266,17 +295,28 @@ export default function ProjectsPage() {
     setCreating(true)
     setError("")
     try {
-      const res = await fetch("http://127.0.0.1:8001/api/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: newTask.title,
-          description: newTask.description,
-          priority: newTask.priority,
-          project_id: newTask.project_id || null,
-          task_mode: newTask.task_mode,
-        }),
-      })
+      let lastErr: any
+      let res: Response | null = null
+      for (let i = 0; i < 3; i++) {
+        try {
+          res = await fetch("http://127.0.0.1:8001/api/tasks", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: newTask.title,
+              description: newTask.description,
+              priority: newTask.priority,
+              project_id: newTask.project_id || null,
+              task_mode: newTask.task_mode,
+            }),
+          })
+          break
+        } catch (e: any) {
+          lastErr = e
+          if (i < 2) await new Promise((r) => setTimeout(r, 2000))
+        }
+      }
+      if (!res) throw lastErr
       if (res.ok) {
         setNewTask({ title: "", description: "", priority: "medium", project_id: "", task_mode: "developer" })
         setShowCreateTask(false)

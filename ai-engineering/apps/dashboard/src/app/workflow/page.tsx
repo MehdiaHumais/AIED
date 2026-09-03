@@ -162,13 +162,32 @@ export default function WorkflowPage() {
   }
 
   const selectFolder = async () => {
-    try {
-      const uid = user?.id ? `?user_id=${user.id}` : ""
-      const r = await fetch(`${API}/api/agent/select-folder${uid}`)
-      const d = await r.json()
-      if (d.path) setBuildFolder(d.path)
-      else if (d.error) setBuildError(d.error)
-    } catch {}
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const uid = user?.id ? `?user_id=${user.id}` : ""
+        const r = await fetch(`${API}/api/agent/select-folder${uid}`)
+        const d = await r.json()
+        if (d.path) { setBuildFolder(d.path); return }
+        if (d.error) {
+          if (attempt === 0 && /not connected/i.test(d.error)) {
+            setBuildError("Agent connecting... retrying in 3s")
+            await new Promise((r) => setTimeout(r, 3000))
+            setBuildError("")
+            continue
+          }
+          setBuildError(d.error)
+          return
+        }
+        return
+      } catch {
+        if (attempt === 0) {
+          setBuildError("Agent connecting... retrying in 3s")
+          await new Promise((r) => setTimeout(r, 3000))
+          setBuildError("")
+          continue
+        }
+      }
+    }
   }
 
   if (loading) return <DashboardLayout><div className="flex items-center justify-center h-64"><p style={{ color: "var(--text-muted)" }}>Loading pipeline...</p></div></DashboardLayout>
