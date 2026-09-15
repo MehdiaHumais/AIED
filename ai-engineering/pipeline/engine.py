@@ -4497,8 +4497,13 @@ CRITICAL - THE PROJECT MUST BE INSTALLABLE AND RUNNABLE:
             task.commands_run.extend(test_results.get("commands_run", []))
             self._persist()
 
-            # ----- Step 2: Auto-fix if errors (max 2 rounds) -----
-            max_fix_attempts = 2
+            # ----- Step 2: Auto-fix if errors (max 4 rounds) -----
+            # Each round runs the machine fixer first, then the LLM architect.
+            # TypeScript type errors need the LLM but are convergence-sensitive:
+            # the fixer must re-test after every round and keep going until the
+            # build actually compiles (a new random full-project regeneration
+            # would only reintroduce the same type mismatch).
+            max_fix_attempts = 4
             fix_attempt = 0
             while test_results.get("needs_fix") and fix_attempt < max_fix_attempts:
                 fix_attempt += 1
@@ -4602,9 +4607,18 @@ IMPORTANT ERROR-CLASS RULES (read before fixing):
            ```bash npm install --force caniuse-lite@latest browserslist@latest ```
        - "Could not find a declaration file for module '<X>'" means the npm package exists but ships no types:
            output: ```bash npm install --save-dev --legacy-peer-deps @types/<X> ``` and never edit node_modules.
-       - "Property '<X>' does not exist on type '<Y>'" (or missing required fields when assigning): OPEN the type
-           definition file (e.g. lib/types.ts) and ADD the missing optional field to the interface/type, then make
-           sure every object literal typed as <Y> includes (or tolerates) it.
+       - "Property '<X>' does not exist on type '<Y>'" (or missing required fields when assigning):
+            FIRST read the ACTUAL type definition of <Y> to see what fields it has. Then decide which side
+            to fix:
+              (a) If <Y> is YOUR OWN interface/type (you defined it), add the missing field to <Y> AND
+                  update every object literal that creates <Y> to supply the field.
+              (b) If <Y> is already correct and <X> was a mistake, fix the CONSUMER so it does not
+                  destructure/use <X> — match the consumer code to the actual fields <Y> exports.
+            ALWAYS output BOTH the type definition file AND the consumer file(s) together so they stay
+            consistent. NEVER output only one side.
+       - "Attempted import error: '<name>' is not exported from '<path>'": the exporter file
+            (e.g. utils/date.ts) is missing the named export. Create or fix the export in that file
+            so the name it exports matches the consumer's import. Output both files.
        - NEVER import from next/font or next/font/google: the Google-Fonts download hangs the build in this
            environment. Use a plain CSS system font stack (e.g. font-family: system-ui, sans-serif).
 - Build/run TIMED OUT: the command ran too long - it is NOT a code bug. If the failing command is a long-running server (next start, npm start, uvicorn, npm run dev) it is NOT a failure at all.
@@ -4842,10 +4856,14 @@ IMPORTANT ERROR-CLASS RULES (read before fixing):
 - "Cannot find module 'caniuse-lite/dist/unpacker/agents'" (from next/dist/compiled/browserslist) is node_modules corruption, not a code bug. Run `npm install --force caniuse-lite@latest browserslist@latest` - never edit source files for it.
 - NEVER invent npm dependency versions (e.g. react-chartjs-2@^5.4.0 does not exist): npm install then fails with ETARGET "No matching version found". Write dependencies WITHOUT a version (npm resolves latest) or with the real latest published version. On ETARGET, fix package.json to the actual latest version.
 - "Could not find a declaration file for module '<X>'": the package exists but ships no types; output: ```bash npm install --save-dev --legacy-peer-deps @types/<X> ```.
-- "Property '<X>' does not exist on type '<Y>'": OPEN the type definition file (e.g. lib/types.ts) and add the missing (optional) field; ensure object literals typed as <Y> tolerate it.
+- "Property '<X>' does not exist on type '<Y>'" or "Attempted import error: '<name>' is not exported from '<path>'": FIRST read the actual definition of <Y> to see what fields/exports it has. Then:
+    (a) If the definition is YOUR OWN interface/type and is missing fields, add them AND update every object that creates it.
+    (b) If the definition is already correct, fix the CONSUMER file(s) to match the real shape/exports.
+    ALWAYS output BOTH the definition/type file AND the consumer file(s) together in the same response so they stay consistent.
 - NEVER import from next/font or next/font/google - Google-Fonts download hangs the build in this environment. Use a CSS system font stack only.
 - Do NOT edit generated folders: .next/, node_modules/, dist/, build/, __pycache__/, out/.
 - If BUILD/START TIMED OUT, the command ran too long - not a code bug; a long-running server command is NOT a failure.
+- Your previous rebuild attempts may have generated this exact error before. Do NOT repeat the same mistake — look at the error, read the source files, and fix BOTH the type/definition file AND the consumer to stay consistent.
 
 Project folder: {task.project_folder}
 
