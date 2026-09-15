@@ -32,6 +32,7 @@ class AIEDLocalAgent:
         self.connected = False
         self.reconnect_delay = 3
         self.max_reconnect_delay = 60
+        self._bg_procs: dict[int, subprocess.Popen] = {}
 
     async def connect(self):
         token = self.cfg.get("token", "")
@@ -104,6 +105,8 @@ class AIEDLocalAgent:
                 r = self._list_files(params)
             elif cmd_type == "run_command":
                 r = await self._run_command(params)
+            elif cmd_type == "kill_process":
+                r = self._kill_process(params)
             elif cmd_type == "read_tree":
                 r = self._read_tree(params)
             elif cmd_type == "select_folder":
@@ -287,7 +290,11 @@ class AIEDLocalAgent:
     async def _run_command(self, params):
         command = params.get("command", "")
         project = self._resolve_folder(params)
-        timeout = min(params.get("timeout", 120), 600)
+        raw_timeout = params.get("timeout", 120)
+        timeout = int(raw_timeout) if raw_timeout else 0
+        if timeout > 0:
+            timeout = min(timeout, 1800)
+        kill_on_timeout = params.get("kill_on_timeout", True)
         cwd = project if project and os.path.isdir(project) else os.getcwd()
 
         if not command:
@@ -296,6 +303,34 @@ class AIEDLocalAgent:
         env = os.environ.copy()
         extra_env = params.get("env", {})
         env.update(extra_env)
+
+        # Detached/background mode: spawn the process without waiting, append
+        # its output to a log file inside the project folder, and return the pid
+        # immediately so the backend can stream the log and stop it later.
+        if params.get("detached"):
+            try:
+                log_path = os.path.join(cwd, ".aied_run.log")
+                import io
+                with open(log_path, "w", encoding="utf-8", errors="replace") as f:
+                    f.write(f"$ {command}\n")
+                fobj = io.open(log_path, "a", encoding="utf-8", errors="replace")
+                try:
+                    proc = subprocess.Popen(
+                        command,
+                        shell=True,
+                        cwd=cwd,
+                        env=env,
+                        stdout=fobj,
+                        stderr=fobj,
+                        creationflags=subprocess.CREATE_NEW_CONSOLE if os.name == "nt" else 0,
+                    )
+                finally:
+                    fobj.close()
+                self._bg_procs[proc.pid] = proc
+                print(f"[AIED Agent] Detached start OK: pid={proc.pid} log={log_path}")
+                return {"success": True, "started": True, "pid": proc.pid, "log_path": log_path}
+            except Exception as e:
+                return {"success": False, "error": f"Detached start failed: {e}"}
 
         print(f"[AIED Agent] Running: {command}")
         print(f"[AIED Agent] CWD: {cwd}")
@@ -308,37 +343,98 @@ class AIEDLocalAgent:
                 cwd=cwd,
                 env=env,
             )
-
-            try:
-                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-            except asyncio.TimeoutError:
-                proc.kill()
-                await proc.wait()
-                return {
-                    "success": False,
-                    "error": f"Command timed out after {timeout}s",
-                    "exit_code": -1,
-                    "stdout": "",
-                    "stderr": f"Process killed after {timeout}s timeout",
-                }
-
-            stdout_str = stdout.decode("utf-8", errors="replace")
-            stderr_str = stderr.decode("utf-8", errors="replace")
-
-            max_output = 50_000
-            if len(stdout_str) > max_output:
-                stdout_str = f"... (truncated {len(stdout_str)} chars) ...\n" + stdout_str[-max_output:]
-            if len(stderr_str) > max_output:
-                stderr_str = f"... (truncated {len(stderr_str)} chars) ...\n" + stderr_str[-max_output:]
-
-            return {
-                "success": proc.returncode == 0,
-                "exit_code": proc.returncode,
-                "stdout": stdout_str,
-                "stderr": stderr_str,
-            }
         except Exception as e:
             return {"success": False, "error": str(e)}
+
+        out_b = bytearray()
+        err_b = bytearray()
+        max_buf = 400_000
+
+        async def _pump(stream, buf, is_err):
+            while True:
+                line = await stream.readline()
+                if not line:
+                    break
+                buf.extend(line)
+                if len(buf) > max_buf:
+                    del buf[: len(buf) - max_buf]
+                if is_err:
+                    print(f"[AIED Agent stderr] {line.decode(errors='replace').rstrip()[:250]}")
+                else:
+                    print(f"[AIED Agent output] {line.decode(errors='replace').rstrip()[:250]}")
+
+        async def _collect():
+            await asyncio.gather(
+                _pump(proc.stdout, out_b, False), _pump(proc.stderr, err_b, True), proc.wait()
+            )
+
+        try:
+            if timeout > 0:
+                await asyncio.wait_for(_collect(), timeout=timeout)
+            else:
+                await _collect()
+        except asyncio.TimeoutError:
+            partial_stdout = bytes(out_b).decode("utf-8", errors="replace")
+            partial_stderr = bytes(err_b).decode("utf-8", errors="replace")
+            if not kill_on_timeout:
+                return {
+                    "success": True,
+                    "started": True,
+                    "running": True,
+                    "pid": proc.pid,
+                    "exit_code": -1,
+                    "stdout": partial_stdout,
+                    "stderr": partial_stderr,
+                    "error": f"Process still running after {timeout}s (kept alive)",
+                }
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            await proc.wait()
+            return {
+                "success": False,
+                "error": f"Command timed out after {timeout}s",
+                "exit_code": -1,
+                "stdout": partial_stdout,
+                "stderr": partial_stderr + f"\n[process killed after {timeout}s timeout]",
+            }
+        except asyncio.CancelledError:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            await proc.wait()
+            raise
+
+        stdout_str = bytes(out_b).decode("utf-8", errors="replace")
+        stderr_str = bytes(err_b).decode("utf-8", errors="replace")
+
+        max_output = 50_000
+        if len(stdout_str) > max_output:
+            stdout_str = f"... (truncated {len(stdout_str)} chars) ...\n" + stdout_str[-max_output:]
+        if len(stderr_str) > max_output:
+            stderr_str = f"... (truncated {len(stderr_str)} chars) ...\n" + stderr_str[-max_output:]
+
+        return {
+            "success": proc.returncode == 0,
+            "exit_code": proc.returncode,
+            "stdout": stdout_str,
+            "stderr": stderr_str,
+        }
+
+    def _kill_process(self, params):
+        """Kill a background (detached) process tree started via run_command detached=True."""
+        pid = params.get("pid")
+        if not pid:
+            return {"success": False, "error": "No pid provided"}
+        try:
+            subprocess.run(f"taskkill /PID {pid} /T /F", shell=True, capture_output=True)
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+        self._bg_procs.pop(int(pid), None)
+        print(f"[AIED Agent] Killed pid {pid}")
+        return {"success": True, "killed": int(pid)}
 
     def _clone_repository(self, params):
         """Clone a git repository into a target folder on THIS MACHINE."""

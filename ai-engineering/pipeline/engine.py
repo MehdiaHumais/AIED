@@ -30,6 +30,58 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+def _extract_missing_npm_module(output_text: str) -> str:
+    """Return the name of a missing third-party npm package from a build/run error
+    (or '' if none / if the reference is a local alias, relative path, builtin, or asset).
+
+    Handles the different bundler wordings:
+      Node:     Cannot find module 'date-fns'
+      webpack:  Module not found: Can't resolve 'lucide-react'
+      webpack:  Module not found: Cannot resolve 'date-fns'
+      Vite:     Failed to resolve import 'date-fns'
+    """
+    import re as _re
+    m = (
+        _re.search(r"cannot find module ['\"]([^'\"]+)['\"]", output_text, _re.IGNORECASE)
+        or _re.search(r"(?:can[’']t|cannot)?\s*resolve ['\"]([^'\"]+)['\"]", output_text, _re.IGNORECASE)
+        or _re.search(r"failed to resolve import ['\"]([^'\"]+)['\"]", output_text, _re.IGNORECASE)
+    )
+    if not m:
+        return ""
+    mod = m.group(1).strip().rstrip(".,;)]")
+    if not mod:
+        return ""
+    if mod.startswith(("@/", "~", "./", "../", "node:")):
+        return ""
+    head = mod.split("/")[0].lower()
+    node_builtins = {
+        "fs", "path", "os", "http", "https", "url", "stream", "events", "child_process",
+        "util", "crypto", "buffer", "zlib", "assert", "tty", "net", "dgram", "cluster",
+        "readline", "repl", "vm", "worker_threads", "perf_hooks", "process", "console",
+        "querystring", "string_decoder", "timers", "trace_events", "punycode", "dns",
+        "domain", "module", "sys", "constants",
+    }
+    if head in node_builtins:
+        return ""
+    asset_exts = (".css", ".scss", ".sass", ".less", ".json", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".woff", ".woff2", ".wasm", ".txt")
+    if "/" not in mod and mod.lower().endswith(asset_exts):
+        return ""
+    # Return the installable package root: '@scope/name' for scoped packages,
+    # otherwise the first path segment (e.g. 'react-dom/client' -> 'react-dom').
+    if mod.startswith("@"):
+        return "/".join(mod.split("/")[:2])
+    return mod.split("/")[0]
+
+
+def _is_bare_npm_package_name(mod: str) -> bool:
+    """A bare installable npm name (not '@/' alias, not relative path, not a file asset)."""
+    if not mod or mod.startswith(("@/", "~", "./", "../")):
+        return False
+    if any(mod.endswith(ext) for ext in (".css", ".scss", ".sass", ".less", ".json", ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".woff", ".woff2", ".wasm", ".txt")):
+        return False
+    return True
+
+
 def _run_command_tree(
     cmd: str,
     cwd: str,
@@ -64,15 +116,66 @@ def _run_command_tree(
         return stdout or "", stderr or "", -1
 
 
-async def _run_command_tree_async(cmd: str, cwd: str, timeout: int = 300) -> tuple[str, str, int]:
+async def _run_command_tree_async(cmd: str, cwd: str, timeout: int = 300, on_chunk=None, env: dict | None = None, on_pid=None) -> tuple[str, str, int]:
     """Async shell command. On timeout kills the ENTIRE process tree (taskkill /T /F),
     so orphaned grandchildren can't hold pipes open and freeze the event loop.
-    Returns (stdout, stderr, returncode); returncode is -1 on timeout."""
+    Returns (stdout, stderr, returncode); returncode is -1 on timeout.
+    When `timeout` is None or <= 0 the command runs until the surrounding task is
+    cancelled (used for run-project server mode - the child keeps running and is
+    only killed when the task is cancelled, so 'Stop' works). env is merged into
+    os.environ for the child. on_pid(pid) is called with the child pid if given.
+    When on_chunk(callable) is given, stdout/stderr are streamed line-by-line to
+    it (live), while the full combined output is still returned."""
+    full_env = None
+    if env is not None:
+        full_env = os.environ.copy()
+        full_env.update(env)
     proc = await asyncio.create_subprocess_shell(
-        cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=cwd
+        cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, cwd=cwd, env=full_env
     )
+    if on_pid:
+        try:
+            on_pid(proc.pid)
+        except Exception:
+            pass
     try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        if on_chunk is None:
+            if timeout is not None and timeout > 0:
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            else:
+                stdout, stderr = await proc.communicate()
+        else:
+            stdout_b = bytearray()
+            stderr_b = bytearray()
+
+            async def _pump(stream, buf):
+                while True:
+                    line = await stream.readline()
+                    if not line:
+                        break
+                    buf.extend(line)
+                    try:
+                        on_chunk(line.decode(errors="replace"))
+                    except Exception:
+                        pass
+
+            if timeout is not None and timeout > 0:
+                await asyncio.wait_for(
+                    asyncio.gather(
+                        _pump(proc.stdout, stdout_b),
+                        _pump(proc.stderr, stderr_b),
+                        proc.wait(),
+                    ),
+                    timeout=timeout,
+                )
+            else:
+                await asyncio.gather(
+                    _pump(proc.stdout, stdout_b),
+                    _pump(proc.stderr, stderr_b),
+                    proc.wait(),
+                )
+            stdout = bytes(stdout_b)
+            stderr = bytes(stderr_b)
         return stdout.decode(errors="replace") or "", stderr.decode(errors="replace") or "", proc.returncode
     except asyncio.TimeoutError:
         try:
@@ -87,6 +190,17 @@ async def _run_command_tree_async(cmd: str, cwd: str, timeout: int = 300) -> tup
         except Exception:
             stdout, stderr = b"", b""
         return stdout.decode(errors="replace") or "", stderr.decode(errors="replace") or "", -1
+    except asyncio.CancelledError:
+        # run-project server mode is cancelled when the user hits Stop - kill the
+        # whole process tree so no orphan dev server is left behind, then re-raise.
+        try:
+            subprocess.run(f"taskkill /PID {proc.pid} /T /F", shell=True, capture_output=True)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        raise
 
 
 class PipelineStage(str, Enum):
@@ -94,6 +208,7 @@ class PipelineStage(str, Enum):
     PLANNING = "planning"
     AWAITING_PLAN_APPROVAL = "awaiting_plan_approval"
     BUILDING = "building"
+    AWAITING_STEP_APPROVAL = "awaiting_step_approval"
     CHECKING = "checking"
     AWAITING_CHECK_APPROVAL = "awaiting_check_approval"
     DEPLOYING = "deploying"
@@ -104,6 +219,7 @@ class PipelineStage(str, Enum):
     FIXING = "fixing"
     TESTING = "testing"
     TEST_FAILED = "test_failed"
+    RUNNING_PROJECT = "running_project"
 
 
 class PipelineTask:
@@ -142,12 +258,22 @@ class PipelineTask:
         self.user_issues: list[dict] = []
         self.current_agent = ""
         self.current_action = ""
+        self.current_command = ""
+        self.current_output = ""
         self.todo_list: list[dict] = []
         self.analysis_report = ""
         self.test_report: dict = {}
+        self.step_approval: dict | None = None
+        self.pending_files: list[dict] = []
+        self.pending_commands: list[str] = []
+        self.run_result: dict | None = None
         self._persist_callback = None
 
-    def to_dict(self) -> dict:
+    def to_dict(self, full: bool = False) -> dict:
+        if full:
+            pending_files = self.pending_files
+        else:
+            pending_files = [{"filename": f.get("filename", ""), "chars": len(f.get("content", "") or "")} for f in self.pending_files]
         return {
             "task_id": self.task_id,
             "project_id": self.project_id,
@@ -177,9 +303,15 @@ class PipelineTask:
             "user_issues": self.user_issues,
             "current_agent": self.current_agent,
             "current_action": self.current_action,
+            "current_command": self.current_command,
+            "current_output": self.current_output,
             "todo_list": self.todo_list,
             "analysis_report": self.analysis_report,
             "test_report": self.test_report,
+            "step_approval": self.step_approval,
+            "pending_files": pending_files,
+            "pending_commands": self.pending_commands,
+            "run_result": self.run_result,
         }
 
     def add_history(self, stage: str, message: str):
@@ -234,9 +366,15 @@ def _load_from_dict(data: dict) -> PipelineTask:
     pt.user_issues = data.get("user_issues", [])
     pt.current_agent = data.get("current_agent", "")
     pt.current_action = data.get("current_action", "")
+    pt.current_command = data.get("current_command", "")
+    pt.current_output = data.get("current_output", "")
     pt.todo_list = data.get("todo_list", [])
     pt.analysis_report = data.get("analysis_report", "")
     pt.test_report = data.get("test_report", {})
+    pt.step_approval = data.get("step_approval")
+    pt.pending_files = data.get("pending_files", [])
+    pt.pending_commands = data.get("pending_commands", [])
+    pt.run_result = data.get("run_result")
     return pt
 
 
@@ -352,7 +490,7 @@ class Pipeline:
     def _persist(self):
         os.makedirs(DATA_DIR, exist_ok=True)
         state = {
-            "tasks": {tid: t.to_dict() for tid, t in self.tasks.items()},
+            "tasks": {tid: t.to_dict(full=True) for tid, t in self.tasks.items()},
             "notifications": self.notifications,
         }
         try:
@@ -386,6 +524,106 @@ class Pipeline:
     def get_pipeline_status(self, task_id: str) -> dict | None:
         task = self.tasks.get(task_id)
         return task.to_dict() if task else None
+
+    SETTINGS_FILE = os.path.join(DATA_DIR, "settings.json")
+
+    def get_require_step_approval(self) -> bool:
+        """Read the global on/off switch for per-step approvals (default: ON)."""
+        try:
+            if os.path.exists(self.SETTINGS_FILE):
+                with open(self.SETTINGS_FILE, "r", encoding="utf-8") as f:
+                    return bool(json.load(f).get("require_step_approval", True))
+        except Exception as e:
+            self._debug_log(f"Failed to read step-approval setting: {e}")
+        return True
+
+    def set_require_step_approval(self, value: bool):
+        try:
+            os.makedirs(DATA_DIR, exist_ok=True)
+            data = {}
+            if os.path.exists(self.SETTINGS_FILE):
+                with open(self.SETTINGS_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            data["require_step_approval"] = bool(value)
+            with open(self.SETTINGS_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            self._debug_log(f"Failed to save step-approval setting: {e}")
+
+    async def approve_step(self, task_id: str):
+        """User approves the pending agent step - pipeline may continue."""
+        task = self.tasks.get(task_id)
+        if not task or not task.step_approval or task.step_approval.get("status") != "pending":
+            return
+        task.step_approval["status"] = "approved"
+        task.stage = PipelineStage.BUILDING
+        task.add_history("step_approved", f"{task.step_approval.get('agent', 'agent')} step approved: {task.step_approval.get('title', '')}")
+        self._add_notification("Step Approved", f"Approved: {task.step_approval.get('title', '')}", task_id)
+        self._persist()
+
+    async def reject_step(self, task_id: str):
+        """User rejects the pending agent step - the step is skipped."""
+        task = self.tasks.get(task_id)
+        if not task or not task.step_approval or task.step_approval.get("status") != "pending":
+            return
+        task.step_approval["status"] = "rejected"
+        task.stage = PipelineStage.BUILDING
+        task.add_history("step_rejected", f"{task.step_approval.get('agent', 'agent')} step rejected (will be skipped): {task.step_approval.get('title', '')}")
+        self._add_notification("Step Rejected", f"Skipping: {task.step_approval.get('title', '')}", task_id, "warning")
+        self._persist()
+
+    async def _request_step_approval(self, task: PipelineTask, agent: str, step: str,
+                                     title: str, detail: str = "",
+                                     files: list | None = None,
+                                     commands: list | None = None) -> bool:
+        """Ask the user to approve an agent step. Blocks until approved/rejected.
+        Returns True if approved (proceed), False if rejected (skip)."""
+        import uuid
+        if self._is_cancelled(task.task_id):
+            return False
+        task.step_approval = {
+            "id": uuid.uuid4().hex[:12],
+            "agent": agent,
+            "step": step,
+            "title": title,
+            "detail": detail,
+            "files": [{"path": f.get("filename", "")} for f in (files or [])],
+            "commands": list(commands or []),
+            "requested_at": datetime.utcnow().isoformat(),
+            "status": "pending",
+        }
+        task.pending_files = list(files or [])
+        task.pending_commands = list(commands or [])
+        task.stage = PipelineStage.AWAITING_STEP_APPROVAL
+        task.current_agent = agent
+        task.current_action = title
+        self._add_notification("Approval Required", f"{agent}: {title}", task.task_id, "approval", user_id=task.user_id)
+        self._persist()
+        asyncio.create_task(self._send_desktop_notification(
+            task.user_id, "Agent Needs Your Approval",
+            f"[{agent}] {title}", "info",
+        ))
+        while True:
+            await asyncio.sleep(2)
+            if self._is_cancelled(task.task_id):
+                return False
+            req = task.step_approval
+            if not req:
+                return False
+            if req.get("status") == "approved":
+                task.step_approval = None
+                task.pending_files = []
+                task.pending_commands = []
+                task.add_history("step_approved", f"{agent} step approved and continuing: {title}")
+                self._persist()
+                return True
+            if req.get("status") == "rejected":
+                task.step_approval = None
+                task.pending_files = []
+                task.pending_commands = []
+                task.add_history("step_rejected", f"{agent} step rejected - skipping: {title}")
+                self._persist()
+                return False
 
     def get_notifications(self, unread_only: bool = False, user_id: str = "", is_admin: bool = False) -> list[dict]:
         if not user_id:
@@ -756,10 +994,10 @@ FIXES ALREADY ATTEMPTED:
                 logger.error(f"[LocalAgent] Write failed: {filename}: {result.get('error')}")
         return written
 
-    async def _agent_run_command(self, user_id: str, cmd: str, project_folder: str = "", timeout: int = 300) -> tuple[str, str, int]:
+    async def _agent_run_command(self, user_id: str, cmd: str, project_folder: str = "", timeout: int = 300, extra_env: dict | None = None, kill_on_timeout: bool = True) -> tuple[str, str, int]:
         """Run a command through the Local Agent."""
         mgr = self._get_agent_manager()
-        result = await mgr.run_command(user_id, cmd, timeout=timeout, project_folder=project_folder)
+        result = await mgr.run_command(user_id, cmd, timeout=timeout, project_folder=project_folder, env=extra_env or None, kill_on_timeout=kill_on_timeout)
         stdout = result.get("stdout", "")
         stderr = result.get("stderr", "")
         retcode = result.get("exit_code", -1)
@@ -806,12 +1044,59 @@ FIXES ALREADY ATTEMPTED:
         result = await mgr.delete_file(user_id, rel_path, project_folder)
         return result.get("success", False)
 
-    async def _run_cmd(self, cmd: str, cwd: str = "", timeout: int = 300, user_id: str = "") -> tuple[str, str, int]:
-        """Run a shell command, routing through Local Agent if connected."""
+    def _append_live_output(self, task: "PipelineTask", chunk: str):
+        """Append streamed command output to a task's live console (throttled persist)."""
+        if not chunk or task is None:
+            return
+        task.current_output = (task.current_output + chunk)[-12000:]
+        now = time.monotonic()
+        if now - getattr(task, "_last_live_persist", 0.0) >= 2.0:
+            task._last_live_persist = now
+            self._persist()
+
+    async def _set_live_command(self, task: "PipelineTask", cmd: str, chunk: str = ""):
+        """Update the live 'currently running command' display for a task.
+        Called right before a command starts, continuously while it streams
+        output, and once more to clear it when the command finishes."""
+        if chunk:
+            self._append_live_output(task, chunk)
+            return
+        task.current_command = cmd
+        if not cmd:
+            task.current_output = ""
+        task._last_live_persist = 0.0
+        self._persist()
+
+    async def _run_cmd(self, cmd: str, cwd: str = "", timeout: int = 300, user_id: str = "", task: "PipelineTask | None" = None, extra_env: dict | None = None) -> tuple[str, str, int]:
+        """Run a shell command, routing through Local Agent if connected.
+        If `task` is provided, the live command display on the task is updated
+        (command name + streamed output when running server-side). extra_env is
+        merged into the child environment (used to set CI=1 etc. for npm)."""
+        cmd_clean = cmd.strip()
         if user_id and self._agent_connected(user_id):
             self._debug_log(f"Running via Local Agent: {cmd[:80]}")
-            return await self._agent_run_command(user_id, cmd, project_folder=cwd, timeout=timeout)
-        return await _run_command_tree_async(cmd, cwd, timeout)
+            if task is not None:
+                await self._set_live_command(task, cmd_clean)
+            try:
+                out_s, err_s, retcode = await self._agent_run_command(user_id, cmd_clean, project_folder=cwd, timeout=timeout, extra_env=extra_env)
+            finally:
+                if task is not None:
+                    task.current_output = (out_s[:3000] + "\n" + err_s[:2000]).strip()[-6000:]
+                    await self._set_live_command(task, "")
+            return out_s, err_s, retcode
+
+        if task is not None:
+            await self._set_live_command(task, cmd_clean)
+        try:
+            return await _run_command_tree_async(
+                cmd_clean, cwd, timeout,
+                on_chunk=(lambda c: self._append_live_output(task, c)) if task is not None else None,
+                env=extra_env,
+                on_pid=(lambda pid: setattr(task, "_last_pid", pid)) if task is not None else None,
+            )
+        finally:
+            if task is not None:
+                await self._set_live_command(task, "")
 
     async def _write_files_to_disk(self, project_folder: str, files: list[dict], user_id: str = "") -> list[dict]:
         """Write extracted files to disk or through Local Agent."""
@@ -1446,24 +1731,31 @@ FIXES ALREADY ATTEMPTED:
 
         # ---- Step 1: install dependencies per root ----
         install_cmds = []
+        npm_env = {"CI": "1", "npm_config_yes": "true", "npm_config_fund": "false", "npm_config_audit": "false"}
         for root in project_roots:
             rel = os.path.relpath(root, folder)
             sub = "" if rel == "." else rel.replace("\\", "/")
             if await _exists(sub, "package.json"):
-                install_cmds.append(("npm install --legacy-peer-deps", root))
+                install_cmds.append(("npm install --no-fund --no-audit --legacy-peer-deps", root))
             if await _exists(sub, "requirements.txt"):
                 install_cmds.append(("pip install -r requirements.txt", root))
-            if await _exists(sub, "pyproject.toml"):
-                install_cmds.append(("pip install -e .", root))
-            if await _exists(sub, "pom.xml"):
-                install_cmds.append(("mvn -q -DskipTests compile", root))
-            if await _exists(sub, "Cargo.toml"):
-                install_cmds.append(("cargo build", root))
+        if not install_cmds:
+            for root in project_roots:
+                rel = os.path.relpath(root, folder)
+                sub = "" if rel == "." else rel.replace("\\", "/")
+                if await _exists(sub, "pyproject.toml"):
+                    install_cmds.append(("pip install -e .", root))
+                if await _exists(sub, "pom.xml"):
+                    install_cmds.append(("mvn -q -DskipTests compile", root))
+                if await _exists(sub, "Cargo.toml"):
+                    install_cmds.append(("cargo build", root))
+        if await _exists("", "gemfile") or await _exists("", "Gemfile"):
+            install_cmds.append((f"bundle install", folder))
 
         for cmd, cwd_root in install_cmds:
             results["tested"] = True
             try:
-                stdout_str, stderr_str, retcode = await self._run_cmd(cmd, cwd_root, timeout=300, user_id=user_id)
+                stdout_str, stderr_str, retcode = await self._run_cmd(cmd, cwd_root, timeout=600, user_id=user_id, task=task, extra_env=npm_env if "npm" in cmd else None)
                 results["install_output"] += f"$ {cmd}\n{stdout_str}\n{stderr_str}\n"
                 results["commands_run"].append({"command": cmd, "returncode": retcode, "stderr": stderr_str[:2000]})
                 if retcode != 0:
@@ -1499,10 +1791,10 @@ FIXES ALREADY ATTEMPTED:
                         if dep_name not in deps:
                             missing_modules.add(dep_name)
                     if missing_modules:
-                        install_cmd = "npm install --save-dev --legacy-peer-deps " + " ".join(sorted(missing_modules))
+                        install_cmd = "npm install --no-fund --no-audit --save-dev --legacy-peer-deps " + " ".join(sorted(missing_modules))
                         print(f"[PIPELINE] Auto-installing missing modules: {', '.join(sorted(missing_modules))}")
                         try:
-                            out_s, err_s, retcode = await self._run_cmd(install_cmd, root, timeout=300, user_id=user_id)
+                            out_s, err_s, retcode = await self._run_cmd(install_cmd, root, timeout=600, user_id=user_id, task=task, extra_env=npm_env)
                             results["tested"] = True
                             if retcode == 0:
                                 print(f"[PIPELINE] Auto-install succeeded: {install_cmd}")
@@ -1546,8 +1838,8 @@ FIXES ALREADY ATTEMPTED:
         for cmd, cwd_root in start_cmds[:4]:
             results["tested"] = True
             try:
-                timeout = 900 if "build" in cmd else 15
-                out_str, err_str, retcode = await self._run_cmd(cmd, cwd_root, timeout=timeout, user_id=user_id)
+                timeout = 1500 if "build" in cmd else 20
+                out_str, err_str, retcode = await self._run_cmd(cmd, cwd_root, timeout=timeout, user_id=user_id, task=task, extra_env=npm_env if "npm" in cmd else None)
                 clean_out = ansi_escape.sub('', out_str)
                 clean_err = ansi_escape.sub('', err_str)
                 combined = (clean_out + clean_err)[:4000]
@@ -1555,7 +1847,7 @@ FIXES ALREADY ATTEMPTED:
                 results["commands_run"].append({"command": cmd, "returncode": retcode, "stderr": clean_err[:4000], "stdout": clean_out[:2000]})
                 if retcode == -1:
                     if "build" in cmd:
-                        results["errors"].append(f"Build timed out ({cmd})")
+                        results["errors"].append(f"Build timed out ({cmd}):\n{combined[:3000]}")
                         results["success"] = False
                         break
                     else:
@@ -1567,16 +1859,16 @@ FIXES ALREADY ATTEMPTED:
                             results["success"] = True
                     continue
                 if retcode != 0:
-                    import re as _modre
-                    mod_match = _modre.search(r"Cannot find module ['\"]([^'\"]+)['\"]", combined)
-                    if mod_match:
-                        missing_mod = mod_match.group(1)
+                    missing_mod = _extract_missing_npm_module(combined)
+                    if missing_mod and _is_bare_npm_package_name(missing_mod):
                         print(f"[PIPELINE] Command failed - missing module '{missing_mod}', auto-installing...")
                         try:
-                            _, fix_err, fix_ret = await self._run_cmd(f"npm install --legacy-peer-deps {missing_mod}", cwd_root, timeout=300, user_id=user_id)
+                            _, fix_err, fix_ret = await self._run_cmd(
+                                f"npm install --no-fund --no-audit --legacy-peer-deps {missing_mod}", cwd_root, timeout=600, user_id=user_id, task=task, extra_env=npm_env
+                            )
                             if fix_ret == 0:
                                 print(f"[PIPELINE] Installed '{missing_mod}', retrying...")
-                                r_out, r_err, retry_ret = await self._run_cmd(cmd, cwd_root, timeout=900, user_id=user_id)
+                                r_out, r_err, retry_ret = await self._run_cmd(cmd, cwd_root, timeout=1500, user_id=user_id, task=task, extra_env=npm_env if "npm" in cmd else None)
                                 r_combined = ansi_escape.sub('', (r_out + r_err))[:4000]
                                 if retry_ret == 0:
                                     results["run_output"] = f"$ {cmd} (after installing {missing_mod})\n{r_combined}"
@@ -1662,10 +1954,11 @@ FIXES ALREADY ATTEMPTED:
             return results
 
         # Step 1: Install dependencies (per detected project root)
+        npm_env = {"CI": "1", "npm_config_yes": "true", "npm_config_fund": "false", "npm_config_audit": "false"}
         install_cmds = []
         for root in project_roots:
             if os.path.exists(os.path.join(root, "package.json")):
-                install_cmds.append(("npm install --legacy-peer-deps", root))
+                install_cmds.append(("npm install --no-fund --no-audit --legacy-peer-deps", root))
             if os.path.exists(os.path.join(root, "requirements.txt")):
                 install_cmds.append(("pip install -r requirements.txt", root))
             if os.path.exists(os.path.join(root, "pyproject.toml")):
@@ -1678,7 +1971,7 @@ FIXES ALREADY ATTEMPTED:
         for cmd, cwd_root in install_cmds:
             results["tested"] = True
             try:
-                stdout_str, stderr_str, retcode = await self._run_cmd(cmd, cwd_root, timeout=300, user_id=task.user_id)
+                stdout_str, stderr_str, retcode = await self._run_cmd(cmd, cwd_root, timeout=600, user_id=task.user_id, task=task, extra_env=npm_env if "npm" in cmd else None)
                 results["install_output"] += f"$ {cmd}\n{stdout_str}\n{stderr_str}\n"
                 results["commands_run"].append({"command": cmd, "returncode": retcode, "stderr": stderr_str[:2000]})
                 if retcode != 0:
@@ -1704,10 +1997,10 @@ FIXES ALREADY ATTEMPTED:
                         if dep_name not in deps:
                             missing_modules.add(dep_name)
                     if missing_modules:
-                        install_cmd = "npm install --save-dev --legacy-peer-deps " + " ".join(sorted(missing_modules))
+                        install_cmd = "npm install --no-fund --no-audit --save-dev --legacy-peer-deps " + " ".join(sorted(missing_modules))
                         print(f"[PIPELINE] Auto-installing missing modules: {', '.join(sorted(missing_modules))}")
                         try:
-                            out_s, err_s, retcode = await self._run_cmd(install_cmd, root, timeout=300, user_id=task.user_id)
+                            out_s, err_s, retcode = await self._run_cmd(install_cmd, root, timeout=600, user_id=task.user_id, task=task, extra_env=npm_env)
                             results["tested"] = True
                             if retcode == 0:
                                 print(f"[PIPELINE] Auto-install succeeded: {install_cmd}")
@@ -1750,8 +2043,8 @@ FIXES ALREADY ATTEMPTED:
         for cmd, cwd_root in start_cmds[:4]:
             results["tested"] = True
             try:
-                timeout = 900 if "build" in cmd else 15
-                out_str, err_str, retcode = await self._run_cmd(cmd, cwd_root, timeout=timeout, user_id=task.user_id)
+                timeout = 1500 if "build" in cmd else 20
+                out_str, err_str, retcode = await self._run_cmd(cmd, cwd_root, timeout=timeout, user_id=task.user_id, task=task, extra_env=npm_env if "npm" in cmd else None)
                 clean_out = ansi_escape.sub('', out_str)
                 clean_err = ansi_escape.sub('', err_str)
                 combined = (clean_out + clean_err)[:4000]
@@ -1759,7 +2052,7 @@ FIXES ALREADY ATTEMPTED:
                 results["commands_run"].append({"command": cmd, "returncode": retcode, "stderr": clean_err[:4000], "stdout": clean_out[:2000]})
                 if retcode == -1:
                     if "build" in cmd:
-                        results["errors"].append(f"Build timed out ({cmd})")
+                        results["errors"].append(f"Build timed out ({cmd}):\n{combined[:3000]}")
                         results["success"] = False
                         break
                     else:
@@ -1771,18 +2064,16 @@ FIXES ALREADY ATTEMPTED:
                             results["success"] = True
                     continue
                 if retcode != 0:
-                    import re as _modre
-                    mod_match = _modre.search(r"Cannot find module ['\"]([^'\"]+)['\"]", combined)
-                    if mod_match:
-                        missing_mod = mod_match.group(1)
+                    missing_mod = _extract_missing_npm_module(combined)
+                    if missing_mod and _is_bare_npm_package_name(missing_mod):
                         print(f"[PIPELINE] Command failed - missing module '{missing_mod}', auto-installing...")
                         try:
                             _, fix_err, fix_ret = await self._run_cmd(
-                                f"npm install --legacy-peer-deps {missing_mod}", cwd_root, timeout=300, user_id=task.user_id
+                                f"npm install --no-fund --no-audit --legacy-peer-deps {missing_mod}", cwd_root, timeout=600, user_id=task.user_id, task=task, extra_env=npm_env
                             )
                             if fix_ret == 0:
                                 print(f"[PIPELINE] Installed '{missing_mod}', retrying...")
-                                r_out, r_err, retry_ret = await self._run_cmd(cmd, cwd_root, timeout=900, user_id=task.user_id)
+                                r_out, r_err, retry_ret = await self._run_cmd(cmd, cwd_root, timeout=1500, user_id=task.user_id, task=task, extra_env=npm_env if "npm" in cmd else None)
                                 r_combined = ansi_escape.sub('', (r_out + r_err))[:4000]
                                 if retry_ret == 0:
                                     results["run_output"] = f"$ {cmd} (after installing {missing_mod})\n{r_combined}"
@@ -2069,12 +2360,14 @@ FIXES ALREADY ATTEMPTED:
                         "Do NOT create a prisma schema - this project does not use Prisma at runtime.")
 
         # Module not found
-        if "module not found" in err or "cannot find module" in err or "error ts2307" in err:
+        if "module not found" in err or "cannot find module" in err or "error ts2307" in err or "can't resolve" in err or "cannot resolve" in err:
             # Extract the module name
             import re as _re
-            mod_match = _re.search(r"Cannot find module ['\"]([^'\"]+)['\"]", error_output)
-            if not mod_match:
-                mod_match = _re.search(r"error TS2307:\s*Cannot find module '([^']+)'", error_output)
+            mod_match = (
+                _re.search(r"Cannot find module ['\"]([^'\"]+)['\"]", error_output)
+                or _re.search(r"error TS2307:\s*Cannot find module '([^']+)'", error_output)
+                or _re.search(r"(?:can[’']t|cannot)\s*resolve ['\"]([^'\"]+)['\"]", error_output, _re.IGNORECASE)
+            )
             if mod_match:
                 mod = mod_match.group(1)
                 return (f"Module '{mod}' is MISSING from node_modules. "
@@ -2202,6 +2495,175 @@ FIXES ALREADY ATTEMPTED:
         return ("Read the build error above. Find the file and line number mentioned. "
                 "Fix that specific file. Output the COMPLETE fixed file.")
 
+    def _ensure_source_module(self, project_folder: str, missing: str, error_output: str) -> bool:
+        """Create a missing SOURCE file referenced by a broken import (e.g. '@/lib/storage'
+        or './lib/foo'). The import names are parsed from the importing file so the stub
+        satisfies the type-check. Best-effort and never raises. Returns True when created."""
+        try:
+            if not project_folder or not os.path.isdir(project_folder):
+                return False
+            root = project_folder
+            rel = missing[2:] if missing.startswith("@/") else missing.lstrip("./")
+            if not rel or rel.startswith(".") or rel.startswith("/") or "node_modules" in rel:
+                return False
+            base = os.path.join(root, rel.replace("/", os.sep))
+            candidates = [
+                base, base + ".ts", base + ".tsx", base + ".d.ts", base + ".js", base + ".jsx",
+                os.path.join(base, "index.ts"), os.path.join(base, "index.tsx"),
+                os.path.join(base, "index.js"), os.path.join(base, "index.jsx"),
+            ]
+            if any(os.path.isfile(c) for c in candidates):
+                return False  # file exists - likely an export mismatch, leave it for the LLM
+            import re as _re2
+            importing_file = None
+            for cand in reversed(_re2.findall(r"([\w/\\\-]+\.(?:tsx?|jsx?)):\d+:\d+", error_output) or []):
+                p = cand.replace("\\", "/").lstrip("./")
+                full = os.path.join(root, p.replace("/", os.sep))
+                if os.path.isfile(full) and "node_modules" not in full:
+                    importing_file = full
+                    break
+            if importing_file is None:
+                skip = {"node_modules", ".git", ".next", "__pycache__", "dist", "build", ".cache", "out"}
+                spec = _re2.escape(missing)
+                try:
+                    for dirpath, dirnames, filenames in os.walk(root):
+                        dirnames[:] = [d for d in dirnames if d not in skip and not d.startswith(".")]
+                        for fn in filenames:
+                            if not fn.endswith((".ts", ".tsx", ".js", ".jsx")):
+                                continue
+                            fp = os.path.join(dirpath, fn)
+                            try:
+                                with open(fp, encoding="utf-8", errors="ignore") as fh:
+                                    head = fh.read(20000)
+                                if _re2.search(r"from\s*['\"]" + spec + r"['\"]|require\(\s*['\"]" + spec + r"['\"]", head):
+                                    importing_file = fp
+                                    break
+                            except Exception:
+                                continue
+                        if importing_file:
+                            break
+                except Exception:
+                    pass
+            exports = []
+            has_default = False
+            if importing_file:
+                try:
+                    with open(importing_file, encoding="utf-8", errors="ignore") as fh:
+                        src = fh.read(30000)
+                    stmt = _re2.search(r"import\s+([^;]+?)\s+from\s*['\"]" + _re2.escape(missing) + r"['\"]", src)
+                    if stmt:
+                        clause = stmt.group(1).strip()
+                        if clause.startswith("*"):
+                            exports.append("*")
+                        else:
+                            if not clause.startswith("{"):
+                                default_part = clause.split("{")[0].strip()
+                                if default_part:
+                                    has_default = True
+                            brace = _re2.search(r"\{(.*?)\}", clause)
+                            if brace:
+                                names = [n.strip().split(" as ")[0].strip() for n in brace.group(1).split(",")]
+                                exports += [n for n in names if n]
+                except Exception:
+                    pass
+            lines = [f"// Auto-generated stub for missing module '{missing}' (created by auto-fixer)."]
+            name_key = missing.lower()
+            if "storage" in name_key or "db" in name_key or "database" in name_key:
+                lines += [
+                    "",
+                    "export async function getItem(key: string): Promise<string | null> {",
+                    "  try { return globalThis.localStorage ? globalThis.localStorage.getItem(key) : null; } catch { return null; }",
+                    "}",
+                    "export async function setItem(key: string, value: string): Promise<void> {",
+                    "  try { if (globalThis.localStorage) globalThis.localStorage.setItem(key, String(value)); } catch {}",
+                    "}",
+                    "export async function removeItem(key: string): Promise<void> {",
+                    "  try { if (globalThis.localStorage) globalThis.localStorage.removeItem(key); } catch {}",
+                    "}",
+                    "export const storage = {",
+                    "  async get(key: string) { return getItem(key); },",
+                    "  async set(key: string, value: string) { return setItem(key, value); },",
+                    "  async remove(key: string) { return removeItem(key); },",
+                    "};",
+                ]
+            for nm in exports:
+                if nm == "*":
+                    continue
+                if nm[:1].isupper():
+                    lines.append(f"export type {nm} = any;")
+                else:
+                    lines.append(f"export const {nm}: any = undefined;")
+            if has_default:
+                lines.append("")
+                lines.append("const _defaultExport: any = {};")
+                lines.append("export default _defaultExport;")
+            os.makedirs(os.path.dirname(base), exist_ok=True)
+            if not os.path.isfile(base + ".ts"):
+                with open(base + ".ts", "w", encoding="utf-8") as fh:
+                    fh.write("\n".join(lines) + "\n")
+            return True
+        except Exception as e:
+            print(f"[PIPELINE] _ensure_source_module failed for '{missing}': {e}")
+            return False
+
+    def _pick_project_cwd(self, project_folder: str) -> str:
+        """Return the directory holding package.json - prefer frontend/ or the single nested app subfolder."""
+        fe = os.path.join(project_folder, "frontend")
+        if os.path.isfile(os.path.join(fe, "package.json")):
+            return fe
+        try:
+            for d in os.listdir(project_folder):
+                sub = os.path.join(project_folder, d)
+                if (
+                    os.path.isdir(sub)
+                    and d not in ("node_modules", ".git", "frontend", "dist", "build", "out", ".next")
+                    and os.path.isfile(os.path.join(sub, "package.json"))
+                ):
+                    return sub
+        except Exception:
+            pass
+        return project_folder
+
+    def _collect_package_json_roots(self, project_folder: str) -> list:
+        """All directories that the install step could target: the project root, frontend/,
+        and every immediate subfolder that has a package.json (matches _install_and_test)."""
+        roots = []
+        if os.path.isfile(os.path.join(project_folder, "package.json")):
+            roots.append(project_folder)
+        fe = os.path.join(project_folder, "frontend")
+        if os.path.isfile(os.path.join(fe, "package.json")):
+            roots.append(fe)
+        try:
+            skip = ("node_modules", "__pycache__", "dist", "build", ".next", "venv", ".venv", ".git", "out", "frontend")
+            for d in sorted(os.listdir(project_folder)):
+                sub = os.path.join(project_folder, d)
+                if os.path.isdir(sub) and d not in skip and not d.startswith((".", "_")):
+                    if os.path.isfile(os.path.join(sub, "package.json")):
+                        roots.append(sub)
+        except OSError:
+            pass
+        # De-dupe, keep order
+        seen = set()
+        return [r for r in roots if not (r in seen or seen.add(r))]
+
+    def _install_npm_package(self, project_folder: str, pkg: str, save_dev: bool = False) -> bool:
+        cwd = self._pick_project_cwd(project_folder)
+        if not cwd or not os.path.isfile(os.path.join(cwd, "package.json")):
+            return False
+        flags = "npm install --no-fund --no-audit --legacy-peer-deps"
+        if save_dev:
+            flags += " --save-dev"
+        try:
+            _, eout, ret = _run_command_tree(f"{flags} {pkg}", cwd, timeout=600)
+            if ret == 0:
+                return True
+            print(f"[PIPELINE] AUTO-FIX npm install {pkg} first try failed: {eout[-200:]}")
+            _, _, ret2 = _run_command_tree(f"npm install {pkg}", cwd, timeout=600)
+            return ret2 == 0
+        except Exception as e:
+            print(f"[PIPELINE] AUTO-FIX npm install for '{pkg}' raised: {e}")
+            return False
+
     def _auto_fix_known_errors(self, error_output: str, project_folder: str) -> bool:
         """Fix common build errors programmatically WITHOUT calling the LLM. Returns True if a fix was applied."""
         err = error_output.lower()
@@ -2221,6 +2683,225 @@ FIXES ALREADY ATTEMPTED:
                     fixed_anything = True
                 except Exception as e:
                     print(f"[PIPELINE] AUTO-FIX @next/swc failed: {e}")
+
+        # Command / binary not found -> dependencies are missing. Install them so the
+        # build can actually run. Catches things like: `sh: 1: next: not found`,
+        # `next: not found`, `command not found`, `vite: not found`, `tsc: not found`.
+        import re as _re
+
+        # ---- MISSING SOURCE MODULE (TypeScript path-alias / relative import) ----
+        # e.g. `Cannot find module '@/lib/storage'`, `Module '"@/lib/storage"' has no
+        # exported member`, `Can't resolve '@components/Button'`. These are NOT npm
+        # packages - npm install cannot fix them. The fix is to CREATE the missing
+        # source file (or configure the tsconfig path alias). Handle them FIRST so
+        # they never fall through to the npm-install branch below.
+        src_module = (
+            _re.search(r"(?:can't resolve|cannot resolve|cannot find module)[^'\"]*['\"](@/[^'\"]+|\.\.?/[^'\"]+)['\"]", err)
+            or _re.search(r"Module ['\"](@/[^'\"]+|\.\.?/[^'\"]+)['\"]", err)
+        )
+        if src_module and not fixed_anything:
+            missing_path = src_module.group(1)
+            if self._ensure_source_module(project_folder, missing_path, error_output):
+                print(f"[PIPELINE] AUTO-FIX: created missing source module stub for '{missing_path}'")
+                fixed_anything = True
+
+        # ---- INVALID TS COMPILER OPTION (e.g. `error TS5023: Unknown compiler option 'use'`) ----
+        # The agent sometimes hallucinates tsconfig options (e.g. "use": "ESNext"). Strip any
+        # compilerOptions key that is not a real TypeScript option, then rebuild.
+        if not fixed_anything and _re.search(r"unknown compiler option|ts5023", err):
+            valid_options = {
+                "target", "module", "moduleResolution", "moduleDetection", "jsx", "lib", "strict",
+                "strictNullChecks", "noImplicitAny", "noUnusedLocals", "noUnusedParameters",
+                "esModuleInterop", "allowSyntheticDefaultImports", "skipLibCheck",
+                "forceConsistentCasingInFileNames", "resolveJsonModule", "isolatedModules",
+                "declaration", "declarationMap", "sourceMap", "outDir", "rootDir", "baseUrl",
+                "paths", "noEmit", "incremental", "composite", "plugins", "allowJs", "checkJs",
+                "jsxImportSource", "types", "downlevelIteration", "experimentalDecorators",
+                "emitDecoratorMetadata", "useDefineForClassFields", "verbatimModuleSyntax",
+                "noEmitOnError", "removeComments", "preserveConstEnums", "importHelpers",
+                "allowUmdGlobalAccess", "alwaysStrict", "noFallthroughCasesInSwitch",
+                "noImplicitReturns", "noPropertyAccessFromIndexSignature",
+                "noUncheckedIndexedAccess", "useUnknownInCatchVariables",
+                "resolvePackageJsonExports", "resolvePackageJsonImports",
+            }
+            for cand in [project_folder, os.path.join(project_folder, "frontend")]:
+                ts = os.path.join(cand, "tsconfig.json")
+                if not os.path.isfile(ts):
+                    continue
+                try:
+                    with open(ts, "r", encoding="utf-8") as fh:
+                        cfg = json.loads(fh.read())
+                    opts = cfg.get("compilerOptions", {})
+                    bad = [k for k in (opts if isinstance(opts, dict) else {}) if k not in valid_options]
+                    if bad:
+                        for k in bad:
+                            opts.pop(k, None)
+                        cfg["compilerOptions"] = opts
+                        with open(ts, "w", encoding="utf-8") as fh:
+                            json.dump(cfg, fh, indent=2)
+                        print(f"[PIPELINE] AUTO-FIX: removed invalid tsconfig compilerOptions {bad} in {ts}")
+                        fixed_anything = True
+                except Exception as e:
+                    print(f"[PIPELINE] AUTO-FIX tsconfig repair failed in {ts}: {e}")
+
+        # ---- MISSING TS DECLARATIONS for an npm module ----
+        # e.g. "Could not find a declaration file for module 'file-saver' ... Try `npm i --save-dev @types/X`"
+        if not fixed_anything and "could not find a declaration file for module" in err:
+            dt_match = _re.search(r"could not find a declaration file for module ['\"]([^'\"]+)['\"]", err)
+            if dt_match and dt_match.group(1).startswith("@types/"):
+                dt_match = None  # already a types package - leave to the LLM
+            if dt_match:
+                mod = dt_match.group(1)
+                if mod.startswith("@"):
+                    types_pkg = "@types/" + mod[1:].replace("/", "__")
+                else:
+                    types_pkg = "@types/" + mod
+                if self._install_npm_package(project_folder, types_pkg, save_dev=True):
+                    print(f"[PIPELINE] AUTO-FIX: installed {types_pkg} (missing TS declarations)")
+                    fixed_anything = True
+                else:
+                    print(f"[PIPELINE] AUTO-FIX: could not install {types_pkg}")
+
+        # ---- MISSING BARE npm PACKAGE ----
+        # webpack: "Module not found: Can't resolve 'date-fns'"; vite/esbuild: "Failed to resolve import".
+        # These are real npm packages (NOT the @/ or ./ aliases handled above), so npm install them.
+        if not fixed_anything:
+            mod = _extract_missing_npm_module(error_output)
+            if mod:
+                if self._install_npm_package(project_folder, mod):
+                    print(f"[PIPELINE] AUTO-FIX: npm installed missing package '{mod}'")
+                    fixed_anything = True
+
+        # ---- NPM VERSION DOES NOT EXIST (ETARGET / "No matching version found for X@range") ----
+        # The agent sometimes hallucinates dependency versions (e.g. react-chartjs-2@^5.4.0 which
+        # does not exist). Resolve the ACTUAL latest published version and rewrite package.json.
+        # NOTE: the manifest may live at the project root, in frontend/, or in ANY immediate
+        # subfolder the tester's install step would target - so we patch + reinstall EVERY
+        # candidate root that contains the bad dependency.
+        if not fixed_anything and ("etarget" in err or "no matching version found" in err):
+            ver_match = _re.search(r"no matching version found for (@?[\w\.\-]+(?:/[\w\.\-]+)?)@(\S+)", err)
+            if ver_match:
+                pkg_name = ver_match.group(1)
+                bad_version = ver_match.group(2).rstrip(".")
+                try:
+                    cwd = self._pick_project_cwd(project_folder)
+                    latest_out, _, vret = _run_command_tree(
+                        f"npm view {pkg_name} version", cwd, timeout=120
+                    )
+                    latest = (latest_out or "").strip().splitlines()[-1].strip() if vret == 0 and latest_out else ""
+                    if latest:
+                        roots = self._collect_package_json_roots(project_folder)
+                        edited_roots = []
+                        for root in roots:
+                            pkg_path = os.path.join(root, "package.json")
+                            if not os.path.isfile(pkg_path):
+                                continue
+                            try:
+                                with open(pkg_path, "r", encoding="utf-8") as fh:
+                                    pkg = json.loads(fh.read())
+                                changed = False
+                                for section in ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies"):
+                                    deps = pkg.get(section)
+                                    if isinstance(deps, dict) and pkg_name in deps:
+                                        deps[pkg_name] = latest
+                                        changed = True
+                                if changed:
+                                    with open(pkg_path, "w", encoding="utf-8") as fh:
+                                        json.dump(pkg, fh, indent=2)
+                                    edited_roots.append(root)
+                                    print(f"[PIPELINE] AUTO-FIX: set {pkg_name}@{latest} in {pkg_path} (bad version was {bad_version})")
+                            except Exception as e:
+                                print(f"[PIPELINE] AUTO-FIX ETARGET package.json edit failed in {pkg_path}: {e}")
+                        if edited_roots:
+                            fixed_anything = True
+                            for root in edited_roots:
+                                out2, eout2, ret2 = _run_command_tree(
+                                    "npm install --no-fund --no-audit --legacy-peer-deps", root, timeout=900
+                                )
+                                print(f"[PIPELINE] AUTO-FIX ETARGET reinstall in {root} exit={ret2}: {eout2[-200:] if ret2 else ''}")
+                    else:
+                        print(f"[PIPELINE] AUTO-FIX ETARGET: could not resolve latest version for {pkg_name}")
+                except Exception as e:
+                    print(f"[PIPELINE] AUTO-FIX ETARGET raised: {e}")
+
+        # ---- CORRUPT / STALE caniuse-lite (Next.js browserslist) ----
+        # e.g. "unhandledRejection Error: Cannot find module 'caniuse-lite/dist/unpacker/agents'"
+        # thrown by next/dist/compiled/browserslist during `next build`. Known npm/node_modules
+        # corruption: a plain `npm install` often does NOT refresh it, so force-reinstall it.
+        if not fixed_anything and "caniuse-lite" in err:
+            caniuse_roots = self._collect_package_json_roots(project_folder)
+            caniuse_fixed = False
+            for root in caniuse_roots:
+                if not os.path.isdir(os.path.join(root, "node_modules")):
+                    continue
+                print(f"[PIPELINE] AUTO-FIX: caniuse-lite corruption in {root}, force reinstalling")
+                try:
+                    _, _, cret = _run_command_tree(
+                        "npm install --force --no-fund --no-audit caniuse-lite@latest browserslist@latest",
+                        root, timeout=900,
+                    )
+                    if cret == 0:
+                        caniuse_fixed = True
+                    else:
+                        print(f"[PIPELINE] AUTO-FIX caniuse-lite install failed in {root} (exit {cret}), trying npm update")
+                        _, _, uret = _run_command_tree(
+                            "npm update --force --no-fund --no-audit caniuse-lite browserslist",
+                            root, timeout=900,
+                        )
+                        caniuse_fixed = caniuse_fixed or uret == 0
+                except Exception as e:
+                    print(f"[PIPELINE] AUTO-FIX caniuse-lite raised in {root}: {e}")
+            if caniuse_fixed:
+                print("[PIPELINE] AUTO-FIX: caniuse-lite reinstalled")
+                fixed_anything = True
+
+        not_found_sig = (
+            _re.search(r"sh:\s*1?:\s*[\w\.\-]+:\s*not found", err)
+            or _re.search(r"[\w\.\-]+:\s+command not found", err)
+            or _re.search(r"cannot find module ['\"]([^'\"]+)['\"]", err)
+            or _re.search(r"is not recognized as an internal or external command", err)
+            or (err.count("/error: cannot find module") > 0 or "cannot find module" in err)
+        )
+        if not_found_sig and not fixed_anything:
+            roots = [project_folder]
+            try:
+                frontend_dir = os.path.join(project_folder, "frontend")
+                if os.path.exists(frontend_dir):
+                    roots.append(frontend_dir)
+                roots += [
+                    os.path.join(project_folder, d)
+                    for d in os.listdir(project_folder)
+                    if os.path.isdir(os.path.join(project_folder, d))
+                    and d not in ("node_modules", ".git", "frontend")
+                    and os.path.exists(os.path.join(project_folder, d, "package.json"))
+                ]
+            except Exception:
+                pass
+            installed = False
+            for root in roots:
+                pkg_path = os.path.join(root, "package.json")
+                if not os.path.exists(pkg_path):
+                    continue
+                if os.path.exists(os.path.join(root, "node_modules")):
+                    # node_modules exists but a binary is still missing - reinstall to be safe
+                    print(f"[PIPELINE] AUTO-FIX: dependency missing in {root}, running npm install")
+                else:
+                    print(f"[PIPELINE] AUTO-FIX: node_modules missing in {root}, running npm install")
+                try:
+                    out, err_out, ret = _run_command_tree("npm install --legacy-peer-deps", root, timeout=600)
+                    print(f"[PIPELINE] AUTO-FIX npm install in {root}: exit={ret}")
+                    if ret == 0:
+                        installed = True
+                    else:
+                        out2, err2, ret2 = _run_command_tree("npm install", root, timeout=600)
+                        if ret2 == 0:
+                            installed = True
+                        else:
+                            print(f"[PIPELINE] AUTO-FIX npm install failed in {root}: {err_out[-300:]} / {err2[-300:]}")
+                except Exception as e:
+                    print(f"[PIPELINE] AUTO-FIX npm install raised in {root}: {e}")
+            if installed:
+                fixed_anything = True
 
         # TypeScript import extension error (e.g. 'next/server.js')
         if "implicitly has an 'any' type" in err and "could not find a declaration file for module 'next/server.js'" in err:
@@ -2971,6 +3652,30 @@ and every broken implementation is a real issue.""",
             f"{package[:20000]}"
         )
 
+    def _sync_task_folder(self, task: "PipelineTask") -> None:
+        """Align task.project_folder with the project's CURRENT folder.
+
+        The task object caches the folder from when it was first created, so if the
+        user changes the folder afterwards (dashboard 'change folder'), the pipeline
+        would keep building in the OLD location. Re-read it from the live project.
+        """
+        try:
+            proj_id = getattr(task, "project_id", "") or ""
+            hermes = getattr(self, "hermes", None)
+            if not hermes or not proj_id:
+                return
+            proj = hermes.projects.get(proj_id) if getattr(hermes, "projects", None) else None
+            if proj is None:
+                return
+            current = getattr(proj, "folder", "") or ""
+            if current and current != task.project_folder:
+                print(f"[PIPELINE] Folder sync for {task.task_id}: '{task.project_folder}' -> '{current}'")
+                task.project_folder = current
+                task.add_history("folder_sync", f"Folder changed to {current}")
+                self._persist()
+        except Exception as e:
+            print(f"[PIPELINE] Folder sync error for {getattr(task, 'task_id', '?')}: {e}")
+
     async def start_building(self, task_id: str):
         """Start the full pipeline for a task."""
         self._debug_log(f"start_building CALLED for {task_id}")
@@ -2981,6 +3686,8 @@ and every broken implementation is a real issue.""",
             self._debug_log(f"start_building: task {task_id} NOT FOUND in self.tasks (keys={list(self.tasks.keys())})")
             print(f"[PIPELINE] start_building: task {task_id} NOT FOUND")
             return
+
+        self._sync_task_folder(task)
 
         if task.task_mode == "tester":
             self._debug_log(f"start_building: task {task_id} -> tester mode")
@@ -3057,6 +3764,26 @@ and every broken implementation is a real issue.""",
             task.plan_content = plan
             # Layer 1 Completeness Check: Validate plan output before sending to Layer 2
             if plan and len(plan.strip()) > 50 and "PLANNING FAILED" not in plan.upper() and not plan.startswith("// error"):
+                if self.get_require_step_approval():
+                    # Ask the user to approve the plan before agents start building.
+                    task.plan_approved = False
+                    task.stage = PipelineStage.AWAITING_PLAN_APPROVAL
+                    task.current_agent = ""
+                    task.current_action = "Plan ready for your approval"
+                    task.add_history("awaiting_plan_approval", "Plan created. Waiting for your approval before building.")
+                    self._add_notification(
+                        "Plan Ready",
+                        f"Implementation plan for '{task.title}' is ready for your approval.",
+                        task_id, "approval"
+                    )
+                    if task.user_id:
+                        asyncio.create_task(self._send_desktop_notification(
+                            task.user_id,
+                            "Agent Needs Your Approval",
+                            f"The build plan for '{task.title}' is ready. Approve it to start building.",
+                        ))
+                    self._persist()
+                    return
                 task.plan_approved = True
                 task.stage = PipelineStage.BUILDING
                 task.current_agent = ""
@@ -3093,6 +3820,8 @@ and every broken implementation is a real issue.""",
         if not task:
             print(f"[PIPELINE] start_testing: task {task_id} NOT FOUND")
             return
+
+        self._sync_task_folder(task)
 
         if not task.project_folder or not os.path.isdir(task.project_folder):
             task.stage = PipelineStage.TEST_FAILED
@@ -3323,6 +4052,246 @@ Create an improved plan that addresses all her concerns.""",
             task.add_history("failed", str(e))
             self._add_notification("Re-planning Failed", str(e), task.task_id, "error")
 
+    async def _detect_project_run_command(self, task: "PipelineTask") -> tuple[str, str]:
+        """Pick the command + cwd that actually starts the finished project.
+        Returns (cmd, cwd) — prioritises `dev`/`start` scripts and python entry
+        points. Works through the Local Agent when connected, else on local disk."""
+        folder = task.project_folder
+        if not folder:
+            return "", ""
+        mgr = self._get_agent_manager()
+        user_id = task.user_id
+        connected = bool(user_id) and self._agent_connected(user_id)
+
+        async def _read(root: str, name: str) -> str:
+            if connected:
+                r = await mgr.read_file(user_id, name, root)
+                return r.get("content", "") if r.get("success") else ""
+            try:
+                with open(os.path.join(root, name), "r", encoding="utf-8", errors="replace") as f:
+                    return f.read()
+            except Exception:
+                return ""
+
+        async def _has(root: str, name: str) -> bool:
+            if connected:
+                lst = await mgr.list_files(user_id, "", root)
+                if not lst.get("success"):
+                    return False
+                return name in {e["name"] for e in lst.get("entries", []) if e.get("type") == "file"}
+            return os.path.isfile(os.path.join(root, name))
+
+        async def _pick(root: str) -> tuple[str, str] | None:
+            if await _has(root, "package.json"):
+                pkg = {}
+                try:
+                    pkg = json.loads((await _read(root, "package.json")) or "{}")
+                except Exception:
+                    pass
+                scripts = pkg.get("scripts", {}) or {}
+                main = pkg.get("main", "")
+                for name in ("dev", "start"):
+                    if name in scripts:
+                        return f"npm run {name}", root
+                if main:
+                    return f"node {main}", root
+                if "build" in scripts:
+                    return "npm run build", root
+                return "npm start", root
+            for name in ("app.py", "main.py", "manage.py", "wsgi.py"):
+                if await _has(root, name):
+                    return f"py {name}", root
+            if connected:
+                lst = await mgr.list_files(user_id, "", root)
+                if lst.get("success"):
+                    for e in sorted(lst.get("entries", []), key=lambda x: x.get("name", "")):
+                        if e.get("type") == "file" and e.get("name", "").endswith(".py") and "test" not in e["name"].lower():
+                            return f"py {e['name']}", root
+            else:
+                try:
+                    for f in sorted(os.listdir(root)):
+                        if f.endswith(".py") and "test" not in f.lower():
+                            return f"py {f}", root
+                except Exception:
+                    pass
+            return None
+
+        pick = await _pick(folder)
+        if pick:
+            return pick
+        try:
+            if connected:
+                sub_entries = (await mgr.list_files(user_id, "", folder)).get("entries", [])
+            else:
+                sub_entries = [{"name": n, "type": "directory"} for n in os.listdir(folder) if os.path.isdir(os.path.join(folder, n))]
+            for e in sub_entries:
+                if e.get("type") != "directory":
+                    continue
+                name = e.get("name", "")
+                if name.startswith((".", "_")) or name in ("node_modules", "__pycache__", "dist", "build", ".next", "venv", ".venv"):
+                    continue
+                pick = await _pick(os.path.join(folder, name))
+                if pick:
+                    return pick
+        except Exception:
+            pass
+        return "", ""
+
+    async def run_project(self, task_id: str):
+        """User clicked 'Run Project': agents start the finished project and
+        stream its output live. The app KEEPS RUNNING until the user clicks Stop
+        - it is never killed by a timeout. In local/server mode it runs server-side
+        (true live streaming via the process tree); when the files only exist on
+        the user's machine it starts detached through the Local Agent and the log
+        is tail-streamed onto the dashboard."""
+        self._cancelled_tasks.discard(task_id)
+        task = self.tasks.get(task_id)
+        if not task:
+            return
+        if getattr(task, "stage", None) == PipelineStage.RUNNING_PROJECT:
+            return
+        if not task.project_folder:
+            task.add_history("run_project", "Cannot run project: no project folder set.")
+            self._add_notification("Run Project Failed", "No project folder set for this task.", task_id, "error")
+            self._persist()
+            return
+
+        cmd, cwd = await self._detect_project_run_command(task)
+        if not cmd:
+            task.stage = PipelineStage.COMPLETED
+            task.run_result = {"ok": False, "command": "", "error": "Could not detect how to run this project."}
+            task.add_history("run_project", "Could not detect a run command for this project.")
+            self._add_notification("Run Project Failed", "Could not detect how to run this project.", task_id, "error")
+            self._persist()
+            return
+
+        task._run_finalized = False
+        task.stage = PipelineStage.RUNNING_PROJECT
+        task.current_agent = "runner"
+        task.current_action = f"Running: {cmd}"
+        task.current_command = cmd
+        task.current_output = ""
+        task.run_result = None
+        task.add_history("run_project", f"Launching project: {cmd}")
+        self._add_notification("Run Project", f"Agents are starting your project: {task.title}", task_id)
+        self._persist()
+
+        agent_connected = bool(task.user_id) and self._agent_connected(task.user_id)
+        try:
+            if os.path.isdir(cwd):
+                await self._run_project_local(task, cmd, cwd)
+            elif agent_connected:
+                await self._run_project_remote(task, cmd, task.project_folder, task.user_id)
+            else:
+                raise RuntimeError("Project folder is not accessible on this machine and no Local Agent is connected.")
+            await self._finalize_run(task, cmd, ok=True, msg=f"Project '{task.title}' start finished.")
+        except asyncio.CancelledError:
+            await self._finalize_run(task, cmd, stopped=True, msg="Project stopped by user.")
+            raise
+        except Exception as e:
+            await self._finalize_run(task, cmd, ok=False, msg=f"Run error: {e}")
+        self._persist()
+
+    async def _run_project_local(self, task: "PipelineTask", cmd: str, cwd: str):
+        """Server-side keep-alive run: streams live until the user stops it.
+        Runs without a timeout; stopping cancels the task which kills the tree."""
+        out_s, err_s, retcode = await _run_command_tree_async(
+            cmd, cwd, timeout=None,
+            on_chunk=(lambda c: self._append_live_output(task, c)),
+            on_pid=(lambda pid: setattr(task, "_last_pid", pid)),
+        )
+        combined = (out_s + "\n" + err_s)[-4000:]
+        if retcode == 0:
+            task.run_result = {
+                "ok": True, "command": cmd, "output": combined, "finished": True,
+                "note": "Project process finished (exit 0).",
+            }
+        elif retcode == -1:
+            task.run_result = {
+                "ok": True, "command": cmd, "output": combined, "finished": False,
+                "note": "Project is running (kept alive until you press Stop).",
+            }
+        else:
+            task.run_result = {
+                "ok": False, "command": cmd, "output": combined, "finished": True,
+                "note": f"Project process exited early (code {retcode}).",
+            }
+
+    async def _run_project_remote(self, task: "PipelineTask", cmd: str, folder: str, user_id: str):
+        """Run the project detached through the Local Agent and tail-stream its
+        log file. Keeps running until the task is stopped."""
+        mgr = self._get_agent_manager()
+        result = await mgr.run_command(user_id, cmd, timeout=0, project_folder=folder, detached=True)
+        if not result.get("started"):
+            raise RuntimeError(result.get("error", "Failed to start the project on your machine."))
+        pid = result.get("pid")
+        task._remote_run_pid = pid
+        log_path = result.get("log_path", os.path.join(folder, ".aied_run.log"))
+        task.run_result = {
+            "ok": True, "command": cmd, "output": "", "finished": False,
+            "note": "Project started on your machine (running in background).",
+        }
+        self._persist()
+        while True:
+            await asyncio.sleep(3)
+            if self._is_cancelled(task.task_id):
+                break
+            r = await mgr.read_file(user_id, os.path.basename(log_path), folder)
+            if not r.get("success"):
+                continue
+            content = r.get("content", "")
+            if content:
+                task.current_output = content[-6000:]
+                self._persist()
+
+    async def _kill_remote_pid(self, task: "PipelineTask"):
+        pid = getattr(task, "_remote_run_pid", None)
+        if pid and task.user_id and self._agent_connected(task.user_id):
+            try:
+                mgr = self._get_agent_manager()
+                await mgr.kill_process(task.user_id, pid)
+            except Exception:
+                pass
+
+    async def _finalize_run(self, task: "PipelineTask", cmd: str, stopped: bool = False, ok: bool = True, msg: str = ""):
+        """Reset a task after a run-project session ends (natural exit or Stop)."""
+        if getattr(task, "_run_finalized", False):
+            return
+        task._run_finalized = True
+        pid = getattr(task, "_last_pid", None) or getattr(task, "_remote_run_pid", None)
+        if pid:
+            try:
+                subprocess.run(f"taskkill /PID {pid} /T /F", shell=True, capture_output=True)
+            except Exception:
+                pass
+        await self._kill_remote_pid(task)
+        task.stage = PipelineStage.COMPLETED
+        task.current_agent = ""
+        task.current_action = ""
+        task.current_command = ""
+        if task.run_result is None:
+            task.run_result = {"ok": ok, "command": cmd, "output": task.current_output[-3000:], "finished": not stopped, "note": msg or "Project stopped."}
+        else:
+            task.run_result.setdefault("note", msg or "")
+        task.add_history("run_project", msg or f"Project '{task.title}' stopped.")
+        self._add_notification("Run Project", msg or "Project stopped.", task.task_id, "info" if ok else "error")
+        try:
+            if task.user_id:
+                asyncio.create_task(self._send_desktop_notification(task.user_id, "Project Run", (msg or "Project stopped.")[:180]))
+        except Exception:
+            pass
+        self._persist()
+
+    async def stop_project(self, task_id: str):
+        """Stop a running project (user clicked Stop Project)."""
+        task = self.tasks.get(task_id)
+        if not task or task.stage != PipelineStage.RUNNING_PROJECT:
+            return
+        cmd = getattr(task, "current_command", "") or ""
+        await self._finalize_run(task, cmd, stopped=True, msg="Project stopped by user.")
+        # Kill the runner task (cancels the server-side subprocess tree too).
+        self.cancel_task(task_id)
+
     async def _run_building(self, task: PipelineTask):
         """Run Frontend + Backend agents in parallel."""
         print(f"[PIPELINE] _run_building STARTED for task {task.task_id}")
@@ -3365,6 +4334,11 @@ CRITICAL - THE PROJECT MUST BE INSTALLABLE AND RUNNABLE:
        Vite:    "scripts": {{ "dev": "vite", "build": "vite build" }}
 - Include every config file your app needs to install and start: index.html (for Vite), next.config.js, tsconfig.json, postcss.config.js, tailwind.config.ts, etc.
 - The project will be validated by running: npm install, then the build/dev/start script. If those are missing or broken, validation FAILS and your work is sent back for a rewrite.
+- EVERY import statement must resolve to a file you output. Before you finish, mentally re-check each import (including '@/*' aliases); if a module file is missing, output it too. For '@/*' aliases, ensure tsconfig.json has "paths": {{ "@/*": ["./*"] }}.
+- Do NOT invent tsconfig compilerOptions - every key you write must be a real TypeScript option (TS5023/Unknown compiler option is an invalid key). 
+- Do NOT invent npm dependency versions - a made-up version (e.g. react-chartjs-2@^5.4.0) fails npm install with ETARGET. Write dependencies WITHOUT a version (npm resolves the latest) or with the true latest published version. 
+- Do NOT import from next/font or next/font/google - Google-Fonts download hangs the build in this environment. Use a CSS system font stack.
+- Do NOT edit generated folders: .next/, node_modules/, dist/, build/, __pycache__/, out/.
 - Do NOT include setup commands like 'npm install' / 'npm run build' as bash commands - they are run automatically during validation. Only include commands for extra packages you need installed."""
 
             task.current_agent = "frontend-engineer"
@@ -3399,20 +4373,49 @@ CRITICAL - THE PROJECT MUST BE INSTALLABLE AND RUNNABLE:
             print(f"[PIPELINE] Frontend done: {len(frontend_result)} chars")
             print(f"[PIPELINE] Backend done: {len(backend_result)} chars")
 
-            # Extract and write all files immediately
+            # Extract and write all files (each agent's file batch requires approval if the toggle is ON)
             fe_files = self._extract_files_from_response(frontend_result)
             be_files = self._extract_files_from_response(backend_result)
             if task.project_folder:
-                written_fe = await self._write_files_to_disk(task.project_folder, fe_files, task.user_id)
-                task.files_written.extend(written_fe)
-                task.add_history("files_written", f"Wrote {len(written_fe)} frontend files to disk")
-                written_be = await self._write_files_to_disk(task.project_folder, be_files, task.user_id)
-                task.files_written.extend(written_be)
-                task.add_history("files_written", f"Wrote {len(written_be)} backend files to disk")
+                require_approval = self.get_require_step_approval()
+                if not require_approval:
+                    written_fe = await self._write_files_to_disk(task.project_folder, fe_files, task.user_id)
+                    task.files_written.extend(written_fe)
+                    task.add_history("files_written", f"Wrote {len(written_fe)} frontend files to disk")
+                    written_be = await self._write_files_to_disk(task.project_folder, be_files, task.user_id)
+                    task.files_written.extend(written_be)
+                    task.add_history("files_written", f"Wrote {len(written_be)} backend files to disk")
+                else:
+                    if fe_files:
+                        approved = await self._request_step_approval(
+                            task, "frontend-engineer", "write_files",
+                            f"Frontend Engineer wants to write {len(fe_files)} files",
+                            "Approve to save these frontend files into the project.",
+                            files=fe_files,
+                        )
+                        if approved:
+                            written_fe = await self._write_files_to_disk(task.project_folder, fe_files, task.user_id)
+                            task.files_written.extend(written_fe)
+                            task.add_history("files_written", f"Wrote {len(written_fe)} frontend files to disk")
+                    if be_files:
+                        approved = await self._request_step_approval(
+                            task, "backend-engineer", "write_files",
+                            f"Backend Engineer wants to write {len(be_files)} files",
+                            "Approve to save these backend files into the project.",
+                            files=be_files,
+                        )
+                        if approved:
+                            written_be = await self._write_files_to_disk(task.project_folder, be_files, task.user_id)
+                            task.files_written.extend(written_be)
+                            task.add_history("files_written", f"Wrote {len(written_be)} backend files to disk")
                 if self._repair_scaffold(task):
                     task.add_history("scaffold_repaired", "Auto-repaired missing project scaffolding (package.json scripts/config)")
                     print(f"[PIPELINE] Repaired project scaffolding in {task.project_folder}")
                 self._persist()
+
+            task.stage = PipelineStage.BUILDING
+            task.current_agent = ""
+            task.current_action = ""
 
             # Layer 2 Completeness Check: Ensure files were actually written before moving to checking
             if not task.files_written or len(task.files_written) == 0:
@@ -3430,10 +4433,20 @@ CRITICAL - THE PROJECT MUST BE INSTALLABLE AND RUNNABLE:
             task.add_history("building_complete", "Frontend and Backend agents finished building")
             self._add_notification("Build Complete", "Agents finished building. Auto-proceeding to Checking layer...", task.task_id)
 
-            # Extract and run extra commands
+            # Extract and run extra commands (requiring approval when the toggle is ON)
             all_commands = self._extract_commands_from_response(frontend_result) + self._extract_commands_from_response(backend_result)
+            run_commands = all_commands
+            if task.project_folder and all_commands and self.get_require_step_approval():
+                approved = await self._request_step_approval(
+                    task, "dev-team", "run_commands",
+                    f"Agents want to run {len(all_commands)} command(s)",
+                    "Approve to execute these commands in the project folder.",
+                    commands=all_commands,
+                )
+                if not approved:
+                    run_commands = []
             if task.project_folder:
-                for cmd in all_commands:
+                for cmd in run_commands:
                     cmd_clean = cmd.strip()
                     # Skip dangerous commands that hang or prompt for input
                     skip_patterns = ["npx create-", "create-next-app", "create-react-app", "mkdir ", "cd ", "npx create", "npm init", "npx tailwindcss init"]
@@ -3441,7 +4454,7 @@ CRITICAL - THE PROJECT MUST BE INSTALLABLE AND RUNNABLE:
                         task.commands_run.append({"command": cmd, "error": "skipped (dangerous/interactive)"})
                         continue
                     try:
-                        out_s, err_s, retcode = await self._run_cmd(cmd, task.project_folder, timeout=300, user_id=task.user_id)
+                        out_s, err_s, retcode = await self._run_cmd(cmd, task.project_folder, timeout=300, user_id=task.user_id, task=task)
                         if retcode == -1:
                             task.commands_run.append({"command": cmd, "error": "timed out"})
                             continue
@@ -3553,7 +4566,7 @@ INSTALL OUTPUT:
 {test_results.get("install_output", "None")[:1000]}
 
 RUN OUTPUT / ERRORS:
-{test_results.get("error_text", test_results.get("run_output", "Unknown error"))[:1500]}"""
+{test_results.get("error_text", test_results.get("run_output", "Unknown error"))[:2000]}"""
                     if helper_guidance:
                         fix_prompt_base += f"""
 
@@ -3572,7 +4585,31 @@ code
 Also run fix commands:
 ```bash
 command
-```"""
+```
+
+IMPORTANT ERROR-CLASS RULES (read before fixing):
+- TypeScript module not found (e.g. "Cannot find module '@/lib/storage'", "Module '\"@/lib/storage\"' has no exported member 'X'", "Can't resolve '@x/y'"): this means a SOURCE FILE is missing or its export names do not match. Do NOT run npm install for it - the '@/' alias and relative imports point at files inside the project, not npm packages. FIX by (a) CREATING the missing file (e.g. lib/storage.ts) implementing EXACTLY the exports the code imports, or (b) FIXING the import or the export so they match, or (c) if the '@/*' alias itself is not configured, adding 'paths': {{ "@/*": ["./*"] }} to tsconfig.json's compilerOptions. NEVER output an import that references a file you are not also creating.
+- Missing dependency (npm module): check package.json first; if really absent, output: ```bash npm install
+           <module> --legacy-peer-deps ``` AFTER updating package.json.
+       - NEVER invent npm dependency versions: a made-up version (e.g. react-chartjs-2@^5.4.0) makes npm install
+           fail with ETARGET "No matching version found". Write the package WITHOUT a version (npm resolves latest)
+           or only the real latest published version. If npm install reports ETARGET, fix package.json to the
+           actual latest version before rebuilding.
+       - error TS5023 / "Unknown compiler option '<X>'" is an INVALID tsconfig.json option (agents often hallucinate
+           e.g. "use": "ESNext"). Rewrite tsconfig.json with ONLY valid compilerOptions, or remove the bad key.
+       - "Cannot find module 'caniuse-lite/dist/unpacker/agents'" (thrown by next/dist/compiled/browserslist during
+           next build) is node_modules CORRUPTION, NOT a code bug. DO NOT edit source files for it - run:
+           ```bash npm install --force caniuse-lite@latest browserslist@latest ```
+       - "Could not find a declaration file for module '<X>'" means the npm package exists but ships no types:
+           output: ```bash npm install --save-dev --legacy-peer-deps @types/<X> ``` and never edit node_modules.
+       - "Property '<X>' does not exist on type '<Y>'" (or missing required fields when assigning): OPEN the type
+           definition file (e.g. lib/types.ts) and ADD the missing optional field to the interface/type, then make
+           sure every object literal typed as <Y> includes (or tolerates) it.
+       - NEVER import from next/font or next/font/google: the Google-Fonts download hangs the build in this
+           environment. Use a plain CSS system font stack (e.g. font-family: system-ui, sans-serif).
+- Build/run TIMED OUT: the command ran too long - it is NOT a code bug. If the failing command is a long-running server (next start, npm start, uvicorn, npm run dev) it is NOT a failure at all.
+- Do NOT edit generated folders: .next/, node_modules/, dist/, build/, __pycache__/, out/.
+- If a file is missing from the CURRENT PROJECT FILES listing above, it does not exist on disk - create it from scratch when it is needed."""
 
                     try:
                         fix_result = await self._call_agent(
@@ -3581,18 +4618,38 @@ command
                             context={"project_name": task.project_name, "project_folder": task.project_folder},
                         )
 
-                        # Write fixed files
+                        # Write fixed files (approval required when toggle is ON)
                         fixed_files = self._extract_files_from_response(fix_result)
-                        if task.project_folder:
-                            written = await self._write_files_to_disk(task.project_folder, fixed_files, task.user_id)
-                            task.files_written.extend(written)
-                            task.add_history("files_written", f"Auto-fix wrote {len(written)} files")
+                        if task.project_folder and fixed_files:
+                            if self.get_require_step_approval():
+                                approved = await self._request_step_approval(
+                                    task, "backend-engineer", "write_files",
+                                    f"Backend Engineer wants to write {len(fixed_files)} fix file(s)",
+                                    "Auto-fix round is waiting for your approval before saving these files.",
+                                    files=fixed_files,
+                                )
+                                if not approved:
+                                    fixed_files = []
+                            if fixed_files:
+                                written = await self._write_files_to_disk(task.project_folder, fixed_files, task.user_id)
+                                task.files_written.extend(written)
+                                task.add_history("files_written", f"Auto-fix wrote {len(written)} files")
 
-                        # Run fix commands
+                        # Run fix commands (approval required when toggle is ON)
                         fix_cmds = self._extract_commands_from_response(fix_result)
-                        for cmd in fix_cmds:
+                        all_fix_cmds = list(fix_cmds)
+                        if task.project_folder and all_fix_cmds and self.get_require_step_approval():
+                            approved = await self._request_step_approval(
+                                task, "dev-team", "run_commands",
+                                f"Fix round wants to run {len(all_fix_cmds)} command(s)",
+                                "Approve to execute these fix commands in the project folder.",
+                                commands=all_fix_cmds,
+                            )
+                            if not approved:
+                                all_fix_cmds = []
+                        for cmd in all_fix_cmds:
                             try:
-                                out_s, err_s, retcode = await self._run_cmd(cmd, task.project_folder, timeout=300, user_id=task.user_id)
+                                out_s, err_s, retcode = await self._run_cmd(cmd, task.project_folder, timeout=300, user_id=task.user_id, task=task)
                                 if retcode == -1:
                                     task.commands_run.append({"command": cmd, "error": "timed out"})
                                     continue
@@ -3767,6 +4824,7 @@ command
     async def _rerun_building(self, task: PipelineTask, check_feedback: str):
         """Re-build with checker feedback."""
         try:
+            self._sync_task_folder(task)
 
             build_context = f"""Project: {task.project_name}
 Task: {task.title}
@@ -3776,6 +4834,18 @@ PREVIOUS BUILD HAD THESE ISSUES:
 {check_feedback[:2000]}
 
 FIX ALL ISSUES and rebuild. Write COMPLETE working code.
+
+IMPORTANT ERROR-CLASS RULES (read before fixing):
+- TypeScript module not found (e.g. "Cannot find module '@/lib/storage'", "Module '\"@/lib/storage\"' has no exported member 'X'", "Can't resolve '@x/y'"): this means a SOURCE FILE is missing or its export names do not match. Do NOT npm-install it - the '@/' alias and relative imports point at files inside the project, not npm packages. FIX by (a) CREATING the missing file (e.g. lib/storage.ts) implementing EXACTLY the exports the code imports, (b) FIXING the import/export to match, or (c) adding 'paths': {{ "@/*": ["./*"] }} to tsconfig.json compilerOptions. NEVER output an import that references a file you are not also creating.
+- Think about WHICH FILES must exist for an import to work: every import statement must resolve to a file you output in this same response (you may ADD new files that were missing). 
+- error TS5023 / "Unknown compiler option '<X>'": INVALID tsconfig option - rewrite tsconfig.json with only valid compilerOptions keys.
+- "Cannot find module 'caniuse-lite/dist/unpacker/agents'" (from next/dist/compiled/browserslist) is node_modules corruption, not a code bug. Run `npm install --force caniuse-lite@latest browserslist@latest` - never edit source files for it.
+- NEVER invent npm dependency versions (e.g. react-chartjs-2@^5.4.0 does not exist): npm install then fails with ETARGET "No matching version found". Write dependencies WITHOUT a version (npm resolves latest) or with the real latest published version. On ETARGET, fix package.json to the actual latest version.
+- "Could not find a declaration file for module '<X>'": the package exists but ships no types; output: ```bash npm install --save-dev --legacy-peer-deps @types/<X> ```.
+- "Property '<X>' does not exist on type '<Y>'": OPEN the type definition file (e.g. lib/types.ts) and add the missing (optional) field; ensure object literals typed as <Y> tolerate it.
+- NEVER import from next/font or next/font/google - Google-Fonts download hangs the build in this environment. Use a CSS system font stack only.
+- Do NOT edit generated folders: .next/, node_modules/, dist/, build/, __pycache__/, out/.
+- If BUILD/START TIMED OUT, the command ran too long - not a code bug; a long-running server command is NOT a failure.
 
 Project folder: {task.project_folder}
 
@@ -3814,7 +4884,17 @@ command
 
             all_files = self._extract_files_from_response(frontend_result) + self._extract_files_from_response(backend_result)
             if task.project_folder:
-                task.files_written = await self._write_files_to_disk(task.project_folder, all_files, task.user_id)
+                if all_files and self.get_require_step_approval():
+                    approved = await self._request_step_approval(
+                        task, "dev-team", "write_files",
+                        f"Rebuild produced {len(all_files)} file(s)",
+                        "Approve to write these rebuilt files into the project.",
+                        files=all_files,
+                    )
+                    if approved:
+                        task.files_written = await self._write_files_to_disk(task.project_folder, all_files, task.user_id)
+                else:
+                    task.files_written = await self._write_files_to_disk(task.project_folder, all_files, task.user_id)
                 if self._repair_scaffold(task):
                     task.add_history("scaffold_repaired", "Auto-repaired missing project scaffolding after rebuild")
                     print(f"[PIPELINE] Repaired project scaffolding in {task.project_folder} after rebuild")
@@ -4459,7 +5539,7 @@ ASSIGN:
                             fix_cmds = self._extract_commands_from_response(fix_result)
                             for cmd in fix_cmds:
                                 try:
-                                    out_s, err_s, retcode = await self._run_cmd(cmd, task.project_folder, timeout=300, user_id=task.user_id)
+                                    out_s, err_s, retcode = await self._run_cmd(cmd, task.project_folder, timeout=300, user_id=task.user_id, task=task)
                                     if retcode == -1:
                                         task.commands_run.append({"command": cmd, "error": "timed out"})
                                     else:
@@ -4653,11 +5733,49 @@ ASSIGN:
                     return "frontend-engineer"
         return "backend-engineer"
 
+    async def rebuild_task(self, task_id: str) -> bool:
+        """Restart the BUILD stage for a task, skipping Planning (keeps the approved plan)."""
+        task = self.tasks.get(task_id)
+        if not task:
+            return False
+        self._sync_task_folder(task)
+        if task.task_mode == "tester":
+            return await self.restart_pipeline(task_id)
+        if task.project_mode != "scratch":
+            return await self.restart_pipeline(task_id)
+
+        # Cancel any active background workers for this task, then clear the
+        # cancelled flag so the restarted build can run again.
+        self.cancel_task(task_id)
+        self._cancelled_tasks.discard(task_id)
+
+        # Reset build/check state but KEEP the approved plan so we go straight to Layer 2.
+        task.stage = PipelineStage.BUILDING
+        task.error = ""
+        task.rejection_count = 0
+        task.build_rejection_count = 0
+        task.check_output = ""
+        task.check_approved = False
+        task.build_output = ""
+        task.deploy_output = ""
+        task.current_agent = ""
+        task.current_action = ""
+        task.commands_run = []
+        task.run_result = None
+        task.add_history("rebuild", f"Build restarted by user: {task.title}")
+        self._add_notification("Build Restarted", f"Re-building '{task.title}'...", task.task_id, "info")
+        self._persist()
+
+        print(f"[PIPELINE] rebuild_task for {task_id} ({task.title}) - running building agents")
+        self._spawn_task(self._run_building(task), task.task_id, task.user_id, f"Rebuild: {task.title}")
+        return True
+
     async def restart_pipeline(self, task_id: str, updated_title: str = "", updated_description: str = "") -> bool:
         """Restart a task from Layer 1 (Planning) regardless of current stage or project mode."""
         task = self.tasks.get(task_id)
         if not task:
             return False
+        self._sync_task_folder(task)
 
         # Cancel any active background workers for this task, then clear the
         # cancelled flag so the restarted task can run again.

@@ -16,7 +16,7 @@ interface PipelineStatus {
   error: string
   deploy_output: string
   files_written: { path: string; size: number }[]
-  commands_run: { command: string; stdout: string; stderr: string; returncode: number }[]
+  commands_run: { command: string; stdout?: string; stderr?: string; returncode?: number; error?: string; elapsed?: number }[]
   history: { stage: string; message: string; timestamp: string }[]
   project_mode: string
   project_name: string
@@ -24,10 +24,16 @@ interface PipelineStatus {
   prebuilt_action: string
   current_agent: string
   current_action: string
+  current_command: string
+  current_output: string
   todo_list: { id: number; description: string; details: string; source: string; status: string }[]
   analysis_report: string
   task_mode?: string
   test_report?: any
+  step_approval?: any
+  pending_files?: any[]
+  pending_commands?: string[]
+  run_result?: { ok: boolean; command: string; output?: string; finished?: boolean; note?: string; error?: string }
 }
 
 const stageColors: Record<string, string> = {
@@ -35,6 +41,7 @@ const stageColors: Record<string, string> = {
   planning: "bg-purple-500/10 text-purple-400 border-purple-500/30",
   awaiting_plan_approval: "bg-yellow-500/10 text-yellow-400 border-yellow-500/30",
   building: "bg-blue-500/10 text-blue-400 border-blue-500/30",
+  awaiting_step_approval: "bg-yellow-500/10 text-yellow-400 border-yellow-500/30",
   checking: "bg-orange-500/10 text-orange-400 border-orange-500/30",
   awaiting_check_approval: "bg-yellow-500/10 text-yellow-400 border-yellow-500/30",
   deploying: "bg-cyan-500/10 text-cyan-400 border-cyan-500/30",
@@ -45,6 +52,7 @@ const stageColors: Record<string, string> = {
   fixing: "bg-blue-500/10 text-blue-400 border-blue-500/30",
   testing: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
   test_failed: "bg-rose-500/10 text-rose-400 border-rose-500/30",
+  running_project: "bg-cyan-500/10 text-cyan-300 border-cyan-500/30",
 }
 
 const stageLabels: Record<string, string> = {
@@ -52,6 +60,7 @@ const stageLabels: Record<string, string> = {
   planning: "Planning...",
   awaiting_plan_approval: "Awaiting Your Approval",
   building: "Building...",
+  awaiting_step_approval: "Needs Your Approval",
   checking: "Validating...",
   awaiting_check_approval: "Ready to Deploy",
   deploying: "Deploying...",
@@ -62,6 +71,7 @@ const stageLabels: Record<string, string> = {
   fixing: "Fixing Issues...",
   testing: "Testing...",
   test_failed: "Issues Found",
+  running_project: "Running Project...",
 }
 
 const stageIcons: Record<string, string> = {
@@ -69,6 +79,7 @@ const stageIcons: Record<string, string> = {
   planning: "[~]",
   awaiting_plan_approval: "[!]",
   building: "[*]",
+  awaiting_step_approval: "[approve]",
   checking: "[?]",
   awaiting_check_approval: "[!]",
   deploying: "[^]",
@@ -79,9 +90,30 @@ const stageIcons: Record<string, string> = {
   fixing: "[fix]",
   testing: "[test]",
   test_failed: "[!!]",
+  running_project: "[run]",
 }
 
-const STAGE_ORDER = ["planning", "awaiting_plan_approval", "building", "checking", "awaiting_check_approval", "deploying", "completed"]
+const STAGE_ORDER = ["planning", "awaiting_plan_approval", "building", "checking", "awaiting_check_approval", "deploying", "running_project", "completed"]
+
+function LiveCommandConsole({ command, output }: { command: string; output: string }) {
+  const ref = useRef<HTMLPreElement>(null)
+  useEffect(() => {
+    if (ref.current) ref.current.scrollTop = ref.current.scrollHeight
+  }, [output])
+  if (!command) return null
+  return (
+    <div className="mt-2 rounded-lg border border-cyan-500/30 bg-black/40 px-3 py-2">
+      <div className="flex items-center gap-2">
+        <span className="h-2 w-2 rounded-full bg-cyan-400 animate-pulse" />
+        <span className="text-xs font-bold text-cyan-300 uppercase tracking-wide">Running command</span>
+      </div>
+      <p className="mt-1.5 text-xs font-mono text-cyan-200">$ {command}</p>
+      {output && (
+        <pre ref={ref} className="mt-2 text-[10px] font-mono text-green-300/90 leading-relaxed max-h-44 overflow-y-auto whitespace-pre-wrap">{output}</pre>
+      )}
+    </div>
+  )
+}
 
 function formatMd(text: string): string {
   return text
@@ -164,7 +196,7 @@ function MonitorPage() {
   const [rejectionFeedback, setRejectionFeedback] = useState("")
   const [showRejectModal, setShowRejectModal] = useState<string | null>(null)
   const pollRef = useRef<NodeJS.Timeout | null>(null)
-  const [activeTab, setActiveTab] = useState<"plan" | "build" | "check" | "files" | "history" | "todo">("build")
+  const [activeTab, setActiveTab] = useState<"plan" | "build" | "check" | "files" | "history" | "todo" | "commands">("build")
   const [prebuiltDesc, setPrebuiltDesc] = useState("")
   const [issueDesc, setIssueDesc] = useState("")
   const [issueError, setIssueError] = useState("")
@@ -172,6 +204,7 @@ function MonitorPage() {
   const [deployForm, setDeployForm] = useState({ apk_path: "", package_name: "", version: "", version_code: "1", release_notes: "", app_name: "", mode: "auto", featured: false, published: false })
   const [copied, setCopied] = useState(false)
   const [zipState, setZipState] = useState<{ taskId: string; busy: boolean; message: string } | null>(null)
+  const [requireStepApproval, setRequireStepApproval] = useState(true)
 
   const fetchPipelines = async () => {
     try {
@@ -194,6 +227,12 @@ function MonitorPage() {
   }
 
   useEffect(() => { fetchPipelines() }, [])
+  useEffect(() => {
+    fetch("http://127.0.0.1:8001/api/approval/settings")
+      .then((r) => r.json())
+      .then((d) => { if (typeof d?.require_step_approval === "boolean") setRequireStepApproval(d.require_step_approval) })
+      .catch(() => {})
+  }, [])
   useEffect(() => {
     pollRef.current = setInterval(fetchPipelines, 2000)
     return () => { if (pollRef.current) clearInterval(pollRef.current) }
@@ -232,6 +271,40 @@ function MonitorPage() {
     setShowRejectModal(null)
     setRejectionFeedback("")
     fetchPipelines()
+  }
+
+  const approveStep = async (taskId: string) => {
+    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/approve-step`, { method: "POST" })
+    fetchPipelines()
+  }
+
+  const rejectStep = async (taskId: string) => {
+    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/reject-step`, { method: "POST" })
+    fetchPipelines()
+  }
+
+  const runProject = async (taskId: string) => {
+    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/run-project`, { method: "POST" })
+    fetchPipelines()
+  }
+
+  const stopProject = async (taskId: string) => {
+    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/stop-project`, { method: "POST" })
+    fetchPipelines()
+  }
+
+  const toggleStepApproval = async (value: boolean) => {
+    setRequireStepApproval(value)
+    try {
+      await fetch("http://127.0.0.1:8001/api/approval/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ require_step_approval: value }),
+      })
+    } catch (e) {
+      console.error(e)
+      setRequireStepApproval(!value)
+    }
   }
 
   const approveDeploy = async (taskId: string) => {
@@ -336,6 +409,11 @@ function MonitorPage() {
     fetchPipelines()
   }
 
+  const rebuildTask = async (taskId: string) => {
+    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/rebuild`, { method: "POST" })
+    fetchPipelines()
+  }
+
   const activePipelines = Object.values(pipelines).filter((p) => p.stage !== "idle")
   const completedPipelines = Object.values(pipelines).filter((p) => p.stage === "completed")
   const allPipelines = Object.values(pipelines)
@@ -351,6 +429,26 @@ function MonitorPage() {
             <p className="text-muted-foreground">
               {activePipelines.length} active | {completedPipelines.length} completed | {allPipelines.length} total
             </p>
+          </div>
+          <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2">
+            <span className="text-xs font-medium text-muted-foreground">Ask Approval Before Each Step</span>
+            <button
+              onClick={() => toggleStepApproval(!requireStepApproval)}
+              role="switch"
+              aria-checked={requireStepApproval}
+              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                requireStepApproval ? "bg-green-600" : "bg-secondary"
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  requireStepApproval ? "translate-x-4" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+            <span className={`text-[11px] font-semibold ${requireStepApproval ? "text-green-400" : "text-muted-foreground"}`}>
+              {requireStepApproval ? "ON" : "OFF"}
+            </span>
           </div>
         </div>
 
@@ -451,6 +549,9 @@ function MonitorPage() {
                       </div>
                     )}
 
+                    {/* Live Command Execution */}
+                    <LiveCommandConsole command={expanded.current_command} output={expanded.current_output} />
+
                     {/* Progress Bar */}
                     <div className="w-full bg-black/20 rounded-full h-2 mt-3">
                       <div
@@ -481,6 +582,22 @@ function MonitorPage() {
                                   className="text-[11px] font-medium px-2 py-1 rounded-md bg-emerald-500/20 hover:bg-emerald-500/30 transition-colors disabled:opacity-50"
                                 >
                                   {zipState?.busy ? "Zipping..." : "⬇ Download ZIP"}
+                                </button>
+                              )}
+                              {expanded.project_folder && expanded.stage !== "running_project" && (
+                                <button
+                                  onClick={() => runProject(expanded.task_id)}
+                                  className="text-[11px] font-bold px-2 py-1 rounded-md bg-cyan-500/25 hover:bg-cyan-500/40 transition-colors"
+                                >
+                                  ▶ Run Project
+                                </button>
+                              )}
+                              {expanded.project_folder && expanded.stage === "running_project" && (
+                                <button
+                                  onClick={() => stopProject(expanded.task_id)}
+                                  className="text-[11px] font-bold px-2 py-1 rounded-md bg-red-500/25 hover:bg-red-500/40 transition-colors"
+                                >
+                                  ■ Stop Project
                                 </button>
                               )}
                               <button
@@ -516,7 +633,7 @@ function MonitorPage() {
 
                   {/* Tabs */}
                   <div className="flex border-b border-border">
-                    {(["build", "plan", "check", "todo", "files", "history"] as const).map((tab) => (
+                    {(["build", "plan", "check", "todo", "commands", "files", "history"] as const).map((tab) => (
                       <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
@@ -530,6 +647,7 @@ function MonitorPage() {
                         {tab === "plan" && "Plan"}
                         {tab === "check" && "Validation"}
                         {tab === "todo" && `Todo (${expanded.todo_list?.filter((t) => t.status !== "fixed").length || 0})`}
+                        {tab === "commands" && `Commands (${expanded.commands_run?.length || 0})`}
                         {tab === "files" && `Files (${expanded.files_written?.length || 0})`}
                         {tab === "history" && `History (${expanded.history?.length || 0})`}
                       </button>
@@ -611,16 +729,31 @@ function MonitorPage() {
                           </div>
                         )}
 
+                        {expanded.stage === "completed" && expanded.project_mode === "scratch" && (
+                          <div className="mt-4">
+                            <button onClick={() => rebuildTask(expanded.task_id)}
+                              className="rounded-lg bg-blue-600/80 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 transition-colors">
+                              🔄 Restart Build (keep plan)
+                            </button>
+                          </div>
+                        )}
+
                         {expanded.stage === "failed" && (
                           <div className="mt-4 p-4 bg-red-500/10 rounded-lg border border-red-500/30 space-y-3">
                             <div className="flex items-center justify-between">
                               <p className="text-sm font-bold text-red-400">❌ Pipeline Failed / Stopped</p>
                             </div>
                             <p className="text-xs text-red-300 font-mono bg-background/50 p-2 rounded border border-red-500/20">{expanded.error}</p>
-                            <button onClick={() => restartPipeline(expanded.task_id)}
-                              className="rounded-lg bg-amber-600 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-700 shadow-sm transition-colors">
-                              🔄 Try Again (Restart from Layer 1 Planning)
-                            </button>
+                            <div className="flex flex-wrap gap-2">
+                              <button onClick={() => rebuildTask(expanded.task_id)}
+                                className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 shadow-sm transition-colors">
+                                🔄 Restart Build (keep plan)
+                              </button>
+                              <button onClick={() => restartPipeline(expanded.task_id)}
+                                className="rounded-lg bg-amber-600 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-700 shadow-sm transition-colors">
+                                🔄 Try Again (Restart from Layer 1 Planning)
+                              </button>
+                            </div>
                           </div>
                         )}
 
@@ -664,7 +797,7 @@ function MonitorPage() {
                               className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-40 disabled:cursor-not-allowed">
                               Ask Agent
                             </button>
-                            {["building", "planning", "checking", "deploying", "fixing"].includes(expanded.stage) && (
+                            {[ "building", "planning", "checking", "deploying", "fixing", "awaiting_step_approval" ].includes(expanded.stage) && (
                               <button onClick={() => stopPipeline(expanded.task_id)}
                                 className="rounded-lg bg-red-600/20 text-red-400 px-4 py-2 text-sm font-medium hover:bg-red-600/30 border border-red-500/30">
                                 Stop Build
@@ -701,6 +834,68 @@ function MonitorPage() {
                               <button onClick={() => rejectPlan(expanded.task_id)}
                                 className="rounded-lg bg-red-600 px-6 py-2 text-sm font-medium text-white hover:bg-red-700">
                                 Reject and Redo
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {expanded.stage === "awaiting_step_approval" && expanded.step_approval && (
+                          <div className="mt-4 space-y-3 rounded-lg border border-yellow-500/30 bg-yellow-500/5 p-4">
+                            <div className="flex items-start gap-3">
+                              <span className="text-yellow-400 text-lg animate-pulse">[approve]</span>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-bold text-yellow-300 uppercase tracking-wide">
+                                  {expanded.step_approval.agent || "Agent"} needs your approval
+                                </p>
+                                <p className="mt-1 text-sm font-medium text-foreground">{expanded.step_approval.title}</p>
+                                {expanded.step_approval.detail && (
+                                  <p className="mt-0.5 text-xs text-muted-foreground">{expanded.step_approval.detail}</p>
+                                )}
+                              </div>
+                            </div>
+
+                            {expanded.step_approval.files && expanded.step_approval.files.length > 0 && (
+                              <div className="rounded-lg bg-background/50 border border-border p-3">
+                                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
+                                  Files to write ({expanded.step_approval.files.length})
+                                </p>
+                                <div className="max-h-40 overflow-y-auto grid gap-1">
+                                  {expanded.step_approval.files.map((f: any, i: number) => (
+                                    <div key={i} className="flex items-center justify-between px-2 py-1 rounded bg-secondary/50">
+                                      <span className="text-xs font-mono text-green-400 truncate">{f.path}</span>
+                                      {f.chars != null && (
+                                        <span className="text-[10px] text-muted-foreground ml-2 shrink-0">{f.chars} chars</span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {expanded.step_approval.commands && expanded.step_approval.commands.length > 0 && (
+                              <div className="rounded-lg bg-background/50 border border-border p-3">
+                                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
+                                  Commands to run ({expanded.step_approval.commands.length})
+                                </p>
+                                <div className="max-h-40 overflow-y-auto space-y-1">
+                                  {expanded.step_approval.commands.map((cmd: string, i: number) => (
+                                    <div key={i} className="flex items-center gap-2 px-2 py-1 rounded bg-secondary/50">
+                                      <span className="text-[10px] text-cyan-400/70 font-mono">$</span>
+                                      <code className="text-xs font-mono text-cyan-100 break-all">{cmd}</code>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="flex gap-2">
+                              <button onClick={() => approveStep(expanded.task_id)}
+                                className="rounded-lg bg-green-600 px-6 py-2 text-sm font-medium text-white hover:bg-green-700">
+                                Approve Step
+                              </button>
+                              <button onClick={() => rejectStep(expanded.task_id)}
+                                className="rounded-lg bg-red-600/20 text-red-400 px-6 py-2 text-sm font-medium hover:bg-red-600/30 border border-red-500/30">
+                                Reject (Skip)
                               </button>
                             </div>
                           </div>
@@ -837,6 +1032,60 @@ function MonitorPage() {
                           </div>
                         ) : (
                           <p className="text-xs text-muted-foreground text-center py-4">No todo items yet</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Commands Tab */}
+                    {activeTab === "commands" && (
+                      <div>
+                        <LiveCommandConsole command={expanded.current_command} output={expanded.current_output} />
+
+                        {expanded.run_result && (
+                          <div className={`mt-3 rounded-lg border p-3 ${expanded.run_result.ok ? "border-green-500/30 bg-green-500/5" : "border-red-500/30 bg-red-500/10"}`}>
+                            <div className="flex items-center gap-2">
+                              <span className={`font-mono text-xs font-bold ${expanded.run_result.ok ? "text-green-400" : "text-red-400"}`}>
+                                {expanded.run_result.ok ? "[run OK]" : "[run failed]"}
+                              </span>
+                              <span className="text-xs font-mono text-cyan-300">$ {expanded.run_result.command}</span>
+                            </div>
+                            {expanded.run_result.note && <p className="mt-1 text-[10px] text-amber-400">{expanded.run_result.note}</p>}
+                            {expanded.run_result.error && <p className="mt-1 text-[10px] text-red-400">{expanded.run_result.error}</p>}
+                            {expanded.run_result.output && (
+                              <pre className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap text-[10px] font-mono text-green-300/90 bg-black/40 rounded-lg p-2">{expanded.run_result.output}</pre>
+                            )}
+                          </div>
+                        )}
+
+                        {expanded.commands_run && expanded.commands_run.length > 0 ? (
+                          <div className="mt-3 space-y-3">
+                            {expanded.commands_run.map((c, i) => (
+                              <div key={i} className="rounded-lg border border-secondary bg-secondary/40 p-3">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-xs font-mono text-cyan-400 break-all">$ {c.command}</p>
+                                  {c.returncode !== undefined && c.returncode !== null ? (
+                                    <span className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded-full border ${
+                                      c.returncode === 0 ? "border-green-500/30 text-green-400" : "border-red-500/30 text-red-400"
+                                    }`}>
+                                      exit {c.returncode}
+                                    </span>
+                                  ) : (
+                                    <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full border border-amber-500/30 text-amber-400">{c.error || "skipped"}</span>
+                                  )}
+                                </div>
+                                {(c.stdout || c.stderr) && (
+                                  <pre className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap text-[10px] font-mono text-muted-foreground bg-black/40 rounded-lg p-2">
+                                    {c.stdout || ""}{c.stderr && `\n--- stderr ---\n${c.stderr}`}
+                                  </pre>
+                                )}
+                                {!c.stdout && !c.stderr && c.error && (
+                                  <p className="mt-1 text-[10px] text-amber-400">{typeof c.error === "string" ? c.error : "skipped"}</p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-muted-foreground text-center py-4">No commands executed yet</p>
                         )}
                       </div>
                     )}

@@ -309,6 +309,7 @@ from apps.api.auth import (
     approve_user, reject_user, delete_user, get_pending_users, get_all_users,
     send_approval_email, send_admin_notification,
     _hash_password, _verify_password,
+    create_password_reset_token, reset_password_with_token, send_password_reset_email,
 )
 
 @app.post("/api/auth/signup")
@@ -445,6 +446,39 @@ async def auth_change_password(data: dict):
     if not result:
         return JSONResponse({"error": "User not found"}, status_code=404)
     return {"status": "updated"}
+
+
+@app.post("/api/auth/forgot-password")
+async def auth_forgot_password(data: dict):
+    """Request a password reset link. Sends an email if the account exists (never reveals whether it does)."""
+    memory = app_state.get("memory")
+    email = (data.get("email") or "").strip().lower()
+    if not email:
+        return JSONResponse({"error": "Email is required"}, status_code=400)
+
+    user = await memory.get_user_by_email(email)
+    if user and user.get("status") == "approved":
+        token = await create_password_reset_token(memory, email)
+        if token:
+            app_url = os.environ.get("AIED_APP_URL", "http://127.0.0.1:8765").rstrip("/")
+            reset_link = f"{app_url}/reset-password?token={token}"
+            send_password_reset_email(user.get("name", "there"), email, reset_link)
+
+    return {"message": "If an account exists for that email, a password reset link has been sent."}
+
+
+@app.post("/api/auth/reset-password")
+async def auth_reset_password(data: dict):
+    """Reset a password using the single-use token from the reset email."""
+    memory = app_state.get("memory")
+    token = (data.get("token") or "").strip()
+    new_password = data.get("new_password", "")
+    if not token or not new_password:
+        return JSONResponse({"error": "Token and new password are required"}, status_code=400)
+    result = await reset_password_with_token(memory, token, new_password)
+    if "error" in result:
+        return JSONResponse(result, status_code=400)
+    return result
 
 
 @app.get("/api/auth/pending-users")
@@ -1273,6 +1307,63 @@ async def reject_plan(task_id: str, data: dict = {}):
     return {"status": "rejected"}
 
 
+@app.get("/api/approval/settings")
+async def get_approval_settings():
+    """Get the global on/off switch for per-step agent approvals."""
+    pipeline: Pipeline = app_state["pipeline"]
+    return {"require_step_approval": pipeline.get_require_step_approval()}
+
+
+@app.post("/api/approval/settings")
+async def set_approval_settings(data: dict = {}):
+    """Turn per-step agent approvals on/off globally."""
+    pipeline: Pipeline = app_state["pipeline"]
+    value = bool(data.get("require_step_approval", True))
+    pipeline.set_require_step_approval(value)
+    return {"status": "ok", "require_step_approval": value}
+
+
+@app.post("/api/pipeline/{task_id}/approve-step")
+async def approve_step(task_id: str):
+    """Approve the currently-pending agent step (files/commands)."""
+    pipeline: Pipeline = app_state["pipeline"]
+    pipeline._spawn_task(pipeline.approve_step(task_id), task_id)
+    return {"status": "approved"}
+
+
+@app.post("/api/pipeline/{task_id}/reject-step")
+async def reject_step(task_id: str):
+    """Reject the currently-pending agent step (it will be skipped)."""
+    pipeline: Pipeline = app_state["pipeline"]
+    pipeline._spawn_task(pipeline.reject_step(task_id), task_id)
+    return {"status": "rejected"}
+
+
+@app.post("/api/pipeline/{task_id}/run-project")
+async def run_project(task_id: str):
+    """Run the finished project - agents start it and stream the output."""
+    pipeline: Pipeline = app_state["pipeline"]
+    task = pipeline.get_task(task_id)
+    if not task:
+        return {"error": "No pipeline for this task"}
+    from pipeline.engine import PipelineStage
+    if task.stage == PipelineStage.RUNNING_PROJECT:
+        return {"error": "The project is already running"}
+    pipeline._spawn_task(pipeline.run_project(task_id), task_id)
+    return {"status": "started"}
+
+
+@app.post("/api/pipeline/{task_id}/stop-project")
+async def stop_project(task_id: str):
+    """Stop a running project."""
+    pipeline: Pipeline = app_state["pipeline"]
+    task = pipeline.get_task(task_id)
+    if not task:
+        return {"error": "No pipeline for this task"}
+    pipeline._spawn_task(pipeline.stop_project(task_id), task_id)
+    return {"status": "stopping"}
+
+
 @app.post("/api/pipeline/{task_id}/stop")
 async def stop_pipeline(task_id: str):
     """Stop a running pipeline."""
@@ -1313,6 +1404,18 @@ async def restart_pipeline(task_id: str, data: dict = {}):
         return JSONResponse({"error": "Task not found"}, status_code=404)
     _persist_both(hermes, pipeline)
     return {"status": "restarted", "task_id": task_id}
+
+
+@app.post("/api/pipeline/{task_id}/rebuild")
+async def rebuild_pipeline(task_id: str):
+    """Restart the BUILD stage only (keeps the approved plan, skips Planning)."""
+    pipeline: Pipeline = app_state["pipeline"]
+    hermes: HermesOrchestrator = app_state["hermes"]
+    ok = await pipeline.rebuild_task(task_id)
+    if not ok:
+        return JSONResponse({"error": "Task not found"}, status_code=404)
+    _persist_both(hermes, pipeline)
+    return {"status": "rebuilding", "task_id": task_id}
 
 
 @app.post("/api/pipeline/{task_id}/approve-deploy")
@@ -1746,6 +1849,13 @@ async def set_project_folder(project_id: str, data: dict):
 
     project.folder = data.get("folder", "")
 
+    _persist_both(hermes, pipeline)
+
+    # Immediately sync any pipeline tasks tied to this project so they
+    # use the new folder right away (instead of waiting for the next build).
+    for tid, pt in getattr(pipeline, "tasks", {}).items():
+        if getattr(pt, "project_id", "") == project_id:
+            pt.project_folder = project.folder
     _persist_both(hermes, pipeline)
 
     user_id = getattr(project, "user_id", "") or ""

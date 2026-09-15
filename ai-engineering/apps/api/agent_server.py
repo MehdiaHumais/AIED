@@ -168,16 +168,23 @@ class AgentManager:
             params["project_folder"] = project_folder
         return await agent.send_command("read_tree", params)
 
-    async def run_command(self, user_id: str, command: str, timeout: int = 120, env: dict = None, project_folder: str = "") -> dict:
+    async def run_command(self, user_id: str, command: str, timeout: int = 120, env: dict = None, project_folder: str = "", kill_on_timeout: bool = True, detached: bool = False) -> dict:
         agent = self.get_agent(user_id)
         if not agent:
             return {"success": False, "error": "Local Agent not connected"}
-        params = {"command": command, "timeout": timeout}
+        params = {"command": command, "timeout": timeout, "kill_on_timeout": kill_on_timeout, "detached": detached}
         if env:
             params["env"] = env
         if project_folder:
             params["project_folder"] = project_folder
         return await agent.send_command("run_command", params, timeout=timeout + 10)
+
+    async def kill_process(self, user_id: str, pid: int) -> dict:
+        """Ask the Local Agent to kill a background process tree by pid."""
+        agent = self.get_agent(user_id)
+        if not agent:
+            return {"success": False, "error": "Local Agent not connected"}
+        return await agent.send_command("kill_process", {"pid": pid}, timeout=30)
 
     async def update_project_folder(self, user_id: str, folder: str) -> dict:
         agent = self.get_agent(user_id)

@@ -6,10 +6,26 @@ import os
 import secrets
 from datetime import datetime, timedelta
 
+from dotenv import load_dotenv
+
 import bcrypt
 import jwt
 
 _JWT_SECRET_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "data", ".jwt_secret")
+
+
+def _load_env():
+    candidates = [
+        os.path.join(os.path.dirname(__file__), "..", "..", ".env"),
+        ".env",
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            load_dotenv(path, override=False)
+            break
+
+
+_load_env()
 
 def _get_jwt_secret() -> str:
     env_secret = os.environ.get("AIED_JWT_SECRET", "")
@@ -37,6 +53,133 @@ ADMIN_EMAIL = "britsyncuk@gmail.com"
 ADMIN_PASSWORD = "superadmin123"
 ADMIN_NAME = "Mehdia"
 ADMIN_COMPANY = "Britsync AI Engineering Department"
+
+# --- Password reset (in-memory, single-use, 15 min TTL) ---
+RESET_TOKEN_TTL_MINUTES = 15
+_RESET_TOKENS: dict = {}  # token -> {"user_id": str, "expires_at": datetime}
+
+
+def _purge_expired_reset_tokens():
+    now = datetime.utcnow()
+    expired = [t for t, meta in _RESET_TOKENS.items() if meta["expires_at"] < now]
+    for t in expired:
+        _RESET_TOKENS.pop(t, None)
+
+
+async def create_password_reset_token(memory, email: str):
+    """Return the reset token as a string if the account exists, else None.
+    Callers must NOT reveal whether an account exists."""
+    _purge_expired_reset_tokens()
+    if not memory or not email:
+        return None
+    user = await memory.get_user_by_email(email)
+    if not user or user.get("status") != "approved":
+        return None
+    token = secrets.token_urlsafe(32)
+    _RESET_TOKENS[token] = {
+        "user_id": user["id"],
+        "expires_at": datetime.utcnow() + timedelta(minutes=RESET_TOKEN_TTL_MINUTES),
+    }
+    return token
+
+
+def redeem_password_reset_token(token: str):
+    """Validate + consume the token. Returns user_id (single-use) or None."""
+    _purge_expired_reset_tokens()
+    meta = _RESET_TOKENS.pop(token, None) if token else None
+    if not meta:
+        return None
+    if meta["expires_at"] < datetime.utcnow():
+        return None
+    return meta["user_id"]
+
+
+async def reset_password_with_token(memory, token: str, new_password: str) -> dict:
+    user_id = redeem_password_reset_token(token)
+    if not user_id:
+        return {"error": "Invalid or expired reset link. Please request a new one."}
+    if not new_password or len(new_password) < 6:
+        return {"error": "Password must be at least 6 characters"}
+    updated = await memory.update_user(user_id, {"password_hash": _hash_password(new_password)})
+    if not updated:
+        return {"error": "User not found"}
+    return {"ok": True, "message": "Password updated successfully"}
+
+
+APP_URL = os.environ.get("AIED_APP_URL", "http://127.0.0.1:8765").rstrip("/")
+
+
+def _resend_sender() -> str:
+    """Sender address. If britsyncai.com is not verified in Resend, fall back to Resend's sandbox sender."""
+    return os.environ.get("RESEND_FROM", "AIED <noreply@britsyncai.com>")
+
+
+def _send_resend(subject: str, to: list, html: str) -> bool:
+    try:
+        import httpx
+        api_key = os.environ.get("RESEND_API_KEY", "")
+        if not api_key:
+            print(f"[AUTH EMAIL] (no RESEND_API_KEY) would send '{subject}' to {to}")
+            return False
+        resp = httpx.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={"from": _resend_sender(), "to": to, "subject": subject, "html": html},
+            timeout=30,
+        )
+        if resp.status_code == 403 and "not verified" in resp.text:
+            print(f"[AUTH EMAIL] RESEND domain not verified (403). Verify britsyncai.com in Resend, then set RESEND_FROM.")
+            return False
+        if resp.status_code != 200:
+            print(f"[AUTH EMAIL] Resend failed ({resp.status_code}): {resp.text[:300]}")
+            return False
+        print(f"[AUTH EMAIL] Sent '{subject}' to {to}")
+        return True
+    except Exception as e:
+        print(f"[AUTH EMAIL] Failed to send '{subject}': {e}")
+        return False
+
+
+def send_password_reset_email(user_name: str, user_email: str, reset_link: str) -> bool:
+    html = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2 style="color: #1a73e8;">Reset Your Password</h2>
+            <p>Hi {user_name},</p>
+            <p>We received a request to reset your AIED password. Click the button below to choose a new one. This link expires in {RESET_TOKEN_TTL_MINUTES} minutes.</p>
+            <a href="{reset_link}" style="display: inline-block; background: #1a73e8; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin: 16px 0;">Reset Password</a>
+            <p style="color: #666; font-size: 12px;">If you didn't request this, you can safely ignore this email.</p>
+        </div>
+    """
+    return _send_resend("Reset Your AIED Password", [user_email], html)
+
+
+def send_approval_email(user_email: str, user_name: str) -> bool:
+    html = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2 style="color: #1a73e8;">Welcome to AIED, {user_name}!</h2>
+            <p>Your account has been approved by the admin. You can now log in and access the dashboard.</p>
+            <a href="{APP_URL}/login" style="display: inline-block; background: #1a73e8; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin: 16px 0;">Login to Dashboard</a>
+            <p style="color: #666; font-size: 12px;">If you have any questions, contact us at britsyncuk@gmail.com</p>
+        </div>
+    """
+    return _send_resend("Your AIED Account Has Been Approved", [user_email], html)
+
+
+def send_admin_notification(user_name: str, user_email: str, company_name: str = "") -> bool:
+    company_info = f"<p><strong>Company:</strong> {company_name}</p>" if company_name else ""
+    html = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2 style="color: #f59e0b;">New Signup Request</h2>
+            <p>A new user has requested access to AIED:</p>
+            <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin: 16px 0;">
+                <p><strong>Name:</strong> {user_name}</p>
+                <p><strong>Email:</strong> {user_email}</p>
+                {company_info}
+            </div>
+            <a href="{APP_URL}/admin" style="display: inline-block; background: #1a73e8; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin: 16px 0;">Review Request</a>
+        </div>
+    """
+    return _send_resend(f"New Signup Request from {user_name}", [ADMIN_EMAIL], html)
 
 
 def _hash_password(password: str) -> str:
@@ -175,59 +318,29 @@ async def get_all_users(memory) -> list[dict]:
 
 
 def send_approval_email(user_email: str, user_name: str) -> bool:
-    try:
-        import resend
-        api_key = os.environ.get("RESEND_API_KEY", "")
-        if not api_key:
-            print(f"[AUTH EMAIL] (no RESEND_API_KEY) Approval email to {user_email}: Welcome {user_name}!")
-            return False
-        resend.api_key = api_key
-        resend.Emails.send({
-            "from": "AIED <noreply@britsyncai.com>",
-            "to": [user_email],
-            "subject": "Your AIED Account Has Been Approved",
-            "html": f"""
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-                <h2 style="color: #1a73e8;">Welcome to AIED, {user_name}!</h2>
-                <p>Your account has been approved by the admin. You can now log in and access the dashboard.</p>
-                <a href="http://localhost:5000/login" style="display: inline-block; background: #1a73e8; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin: 16px 0;">Login to Dashboard</a>
-                <p style="color: #666; font-size: 12px;">If you have any questions, contact us at britsyncuk@gmail.com</p>
-            </div>
-            """,
-        })
-        return True
-    except Exception as e:
-        print(f"[AUTH EMAIL] Failed to send approval email: {e}")
-        return False
+    html = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2 style="color: #1a73e8;">Welcome to AIED, {user_name}!</h2>
+            <p>Your account has been approved by the admin. You can now log in and access the dashboard.</p>
+            <a href="{APP_URL}/login" style="display: inline-block; background: #1a73e8; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin: 16px 0;">Login to Dashboard</a>
+            <p style="color: #666; font-size: 12px;">If you have any questions, contact us at britsyncuk@gmail.com</p>
+        </div>
+    """
+    return _send_resend("Your AIED Account Has Been Approved", [user_email], html)
 
 
 def send_admin_notification(user_name: str, user_email: str, company_name: str = "") -> bool:
-    try:
-        import resend
-        api_key = os.environ.get("RESEND_API_KEY", "")
-        if not api_key:
-            print(f"[AUTH EMAIL] (no RESEND_API_KEY) Admin notification: New signup from {user_name} ({user_email})")
-            return False
-        resend.api_key = api_key
-        company_info = f"<p><strong>Company:</strong> {company_name}</p>" if company_name else ""
-        resend.Emails.send({
-            "from": "AIED <noreply@britsyncai.com>",
-            "to": [ADMIN_EMAIL],
-            "subject": f"New Signup Request from {user_name}",
-            "html": f"""
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-                <h2 style="color: #f59e0b;">New Signup Request</h2>
-                <p>A new user has requested access to AIED:</p>
-                <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin: 16px 0;">
-                    <p><strong>Name:</strong> {user_name}</p>
-                    <p><strong>Email:</strong> {user_email}</p>
-                    {company_info}
-                </div>
-                <a href="http://localhost:5000/admin" style="display: inline-block; background: #1a73e8; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin: 16px 0;">Review Request</a>
+    company_info = f"<p><strong>Company:</strong> {company_name}</p>" if company_name else ""
+    html = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2 style="color: #f59e0b;">New Signup Request</h2>
+            <p>A new user has requested access to AIED:</p>
+            <div style="background: #f8f9fa; padding: 16px; border-radius: 8px; margin: 16px 0;">
+                <p><strong>Name:</strong> {user_name}</p>
+                <p><strong>Email:</strong> {user_email}</p>
+                {company_info}
             </div>
-            """,
-        })
-        return True
-    except Exception as e:
-        print(f"[AUTH EMAIL] Failed to send admin notification: {e}")
-        return False
+            <a href="{APP_URL}/admin" style="display: inline-block; background: #1a73e8; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin: 16px 0;">Review Request</a>
+        </div>
+    """
+    return _send_resend(f"New Signup Request from {user_name}", [ADMIN_EMAIL], html)
