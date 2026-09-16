@@ -462,7 +462,7 @@ async def auth_forgot_password(data: dict):
         if token:
             app_url = os.environ.get("AIED_APP_URL", "http://127.0.0.1:8765").rstrip("/")
             reset_link = f"{app_url}/reset-password?token={token}"
-            send_password_reset_email(user.get("name", "there"), email, reset_link)
+            asyncio.create_task(asyncio.to_thread(send_password_reset_email, user.get("name", "there"), email, reset_link))
 
     return {"message": "If an account exists for that email, a password reset link has been sent."}
 

@@ -143,6 +143,15 @@ class UserDB(Base):
     rejected_at = Column(DateTime, nullable=True)
 
 
+class PasswordResetTokenDB(Base):
+    __tablename__ = "password_reset_tokens"
+
+    token = Column(String, primary_key=True)
+    user_id = Column(String, nullable=False, index=True)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class VPSDeploymentDB(Base):
     __tablename__ = "vps_deployments"
 
@@ -452,6 +461,44 @@ class MemoryStore:
             await session.delete(user)
             await session.commit()
             return True
+
+    # --- Password Reset Tokens (DB-backed, multi-worker safe) ---
+
+    async def create_password_reset_token(self, token: str, user_id: str, expires_at: datetime) -> None:
+        """Persist a password reset token so any worker/process can redeem it."""
+        async with self.session_factory() as session:
+            existing = await session.get(PasswordResetTokenDB, token)
+            if existing:
+                for k, v in {
+                    "user_id": user_id,
+                    "expires_at": expires_at,
+                    "created_at": datetime.utcnow(),
+                }.items():
+                    setattr(existing, k, v)
+            else:
+                session.add(PasswordResetTokenDB(token=token, user_id=user_id, expires_at=expires_at))
+            await session.commit()
+
+    async def redeem_password_reset_token(self, token: str) -> str | None:
+        """Validate + consume a token (single-use). Returns user_id or None."""
+        from sqlalchemy import delete as sql_delete
+        async with self.session_factory() as session:
+            row = await session.get(PasswordResetTokenDB, token)
+            if not row:
+                return None
+            await session.execute(sql_delete(PasswordResetTokenDB).where(PasswordResetTokenDB.token == token))
+            await session.commit()
+            if row.expires_at < datetime.utcnow():
+                return None
+            return row.user_id
+
+    async def purge_expired_password_reset_tokens(self) -> None:
+        from sqlalchemy import delete as sql_delete
+        async with self.session_factory() as session:
+            await session.execute(
+                sql_delete(PasswordResetTokenDB).where(PasswordResetTokenDB.expires_at < datetime.utcnow())
+            )
+            await session.commit()
 
     async def list_pending_users(self) -> list[dict[str, Any]]:
         from sqlalchemy import select

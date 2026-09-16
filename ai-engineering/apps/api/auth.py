@@ -54,9 +54,9 @@ ADMIN_PASSWORD = "superadmin123"
 ADMIN_NAME = "Mehdia"
 ADMIN_COMPANY = "Britsync AI Engineering Department"
 
-# --- Password reset (in-memory, single-use, 15 min TTL) ---
+# --- Password reset (DB-backed, single-use, 15 min TTL) ---
 RESET_TOKEN_TTL_MINUTES = 15
-_RESET_TOKENS: dict = {}  # token -> {"user_id": str, "expires_at": datetime}
+_RESET_TOKENS: dict = {}  # fallback only when the DB memory store is unavailable
 
 
 def _purge_expired_reset_tokens():
@@ -69,24 +69,37 @@ def _purge_expired_reset_tokens():
 async def create_password_reset_token(memory, email: str):
     """Return the reset token as a string if the account exists, else None.
     Callers must NOT reveal whether an account exists."""
-    _purge_expired_reset_tokens()
     if not memory or not email:
         return None
     user = await memory.get_user_by_email(email)
     if not user or user.get("status") != "approved":
         return None
     token = secrets.token_urlsafe(32)
-    _RESET_TOKENS[token] = {
-        "user_id": user["id"],
-        "expires_at": datetime.utcnow() + timedelta(minutes=RESET_TOKEN_TTL_MINUTES),
-    }
+    expires_at = datetime.utcnow() + timedelta(minutes=RESET_TOKEN_TTL_MINUTES)
+    if hasattr(memory, "create_password_reset_token"):
+        try:
+            await memory.create_password_reset_token(token, user["id"], expires_at)
+            return token
+        except Exception as e:
+            print(f"[AUTH] DB token store failed, falling back to memory: {e}")
+    _purge_expired_reset_tokens()
+    _RESET_TOKENS[token] = {"user_id": user["id"], "expires_at": expires_at}
     return token
 
 
-def redeem_password_reset_token(token: str):
+async def redeem_password_reset_token(memory, token: str):
     """Validate + consume the token. Returns user_id (single-use) or None."""
     _purge_expired_reset_tokens()
-    meta = _RESET_TOKENS.pop(token, None) if token else None
+    if not token:
+        return None
+    if hasattr(memory, "redeem_password_reset_token"):
+        try:
+            user_id = await memory.redeem_password_reset_token(token)
+            if user_id:
+                return user_id
+        except Exception as e:
+            print(f"[AUTH] DB token redeem failed, falling back to memory: {e}")
+    meta = _RESET_TOKENS.pop(token, None)
     if not meta:
         return None
     if meta["expires_at"] < datetime.utcnow():
@@ -95,7 +108,7 @@ def redeem_password_reset_token(token: str):
 
 
 async def reset_password_with_token(memory, token: str, new_password: str) -> dict:
-    user_id = redeem_password_reset_token(token)
+    user_id = await redeem_password_reset_token(memory, token)
     if not user_id:
         return {"error": "Invalid or expired reset link. Please request a new one."}
     if not new_password or len(new_password) < 6:
