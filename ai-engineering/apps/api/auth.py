@@ -122,30 +122,34 @@ async def reset_password_with_token(memory, token: str, new_password: str) -> di
 APP_URL = os.environ.get("AIED_APP_URL", "http://127.0.0.1:8765").rstrip("/")
 
 
-def _resend_sender() -> str:
-    """Sender address. If britsyncai.com is not verified in Resend, fall back to Resend's sandbox sender."""
-    return os.environ.get("RESEND_FROM", "AIED <noreply@britsyncai.com>")
+def _smtp_sender() -> str:
+    return os.environ.get("SMTP_FROM", "support@britsyncai.com")
 
 
-def _send_resend(subject: str, to: list, html: str) -> bool:
+def _send_smtp(subject: str, to: list, html: str) -> bool:
     try:
-        import httpx
-        api_key = os.environ.get("RESEND_API_KEY", "")
-        if not api_key:
-            print(f"[AUTH EMAIL] (no RESEND_API_KEY) would send '{subject}' to {to}")
-            return False
-        resp = httpx.post(
-            "https://api.resend.com/emails",
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={"from": _resend_sender(), "to": to, "subject": subject, "html": html},
-            timeout=30,
-        )
-        if resp.status_code == 403 and "not verified" in resp.text:
-            print(f"[AUTH EMAIL] RESEND domain not verified (403). Verify britsyncai.com in Resend, then set RESEND_FROM.")
-            return False
-        if resp.status_code != 200:
-            print(f"[AUTH EMAIL] Resend failed ({resp.status_code}): {resp.text[:300]}")
-            return False
+        import smtplib
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+
+        host = os.environ.get("SMTP_HOST", "live.noblecircle.online")
+        port = int(os.environ.get("SMTP_PORT", "589"))
+        user = os.environ.get("SMTP_USER", "support@britsyncai.com")
+        password = os.environ.get("SMTP_PASSWORD", "Uk2023@walse")
+
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = _smtp_sender()
+        msg["To"] = ", ".join(to)
+        msg.attach(MIMEText(html, "html"))
+
+        with smtplib.SMTP(host, port, timeout=30) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(user, password)
+            server.sendmail(msg["From"], to, msg.as_string())
+
         print(f"[AUTH EMAIL] Sent '{subject}' to {to}")
         return True
     except Exception as e:
@@ -163,7 +167,7 @@ def send_password_reset_email(user_name: str, user_email: str, reset_link: str) 
             <p style="color: #666; font-size: 12px;">If you didn't request this, you can safely ignore this email.</p>
         </div>
     """
-    return _send_resend("Reset Your AIED Password", [user_email], html)
+    return _send_smtp("Reset Your AIED Password", [user_email], html)
 
 
 def send_approval_email(user_email: str, user_name: str) -> bool:
@@ -175,7 +179,7 @@ def send_approval_email(user_email: str, user_name: str) -> bool:
             <p style="color: #666; font-size: 12px;">If you have any questions, contact us at britsyncuk@gmail.com</p>
         </div>
     """
-    return _send_resend("Your AIED Account Has Been Approved", [user_email], html)
+    return _send_smtp("Your AIED Account Has Been Approved", [user_email], html)
 
 
 def send_admin_notification(user_name: str, user_email: str, company_name: str = "") -> bool:
@@ -192,7 +196,7 @@ def send_admin_notification(user_name: str, user_email: str, company_name: str =
             <a href="{APP_URL}/admin" style="display: inline-block; background: #1a73e8; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin: 16px 0;">Review Request</a>
         </div>
     """
-    return _send_resend(f"New Signup Request from {user_name}", [ADMIN_EMAIL], html)
+    return _send_smtp(f"New Signup Request from {user_name}", [ADMIN_EMAIL], html)
 
 
 def _hash_password(password: str) -> str:
@@ -339,7 +343,7 @@ def send_approval_email(user_email: str, user_name: str) -> bool:
             <p style="color: #666; font-size: 12px;">If you have any questions, contact us at britsyncuk@gmail.com</p>
         </div>
     """
-    return _send_resend("Your AIED Account Has Been Approved", [user_email], html)
+    return _send_smtp("Your AIED Account Has Been Approved", [user_email], html)
 
 
 def send_admin_notification(user_name: str, user_email: str, company_name: str = "") -> bool:
@@ -356,4 +360,4 @@ def send_admin_notification(user_name: str, user_email: str, company_name: str =
             <a href="{APP_URL}/admin" style="display: inline-block; background: #1a73e8; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; margin: 16px 0;">Review Request</a>
         </div>
     """
-    return _send_resend(f"New Signup Request from {user_name}", [ADMIN_EMAIL], html)
+    return _send_smtp(f"New Signup Request from {user_name}", [ADMIN_EMAIL], html)
