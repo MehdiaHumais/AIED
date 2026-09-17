@@ -33,7 +33,7 @@ interface PipelineStatus {
   step_approval?: any
   pending_files?: any[]
   pending_commands?: string[]
-  run_result?: { ok: boolean; command: string; output?: string; finished?: boolean; note?: string; error?: string }
+  run_result?: { ok: boolean; command: string; output?: string; finished?: boolean; note?: string; error?: string; url?: string }
 }
 
 const stageColors: Record<string, string> = {
@@ -600,6 +600,16 @@ function MonitorPage() {
                                   ■ Stop Project
                                 </button>
                               )}
+                              {expanded.run_result?.url && (
+                                <a
+                                  href={expanded.run_result.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-[11px] font-bold px-2 py-1 rounded-md bg-emerald-500/25 hover:bg-emerald-500/40 transition-colors"
+                                >
+                                  🌐 Open in Browser
+                                </a>
+                              )}
                               <button
                                 onClick={() => copyRun(run.commands.join(" && "))}
                                 className="text-[11px] font-medium px-2 py-1 rounded-md bg-white/10 hover:bg-white/20 transition-colors"
@@ -624,6 +634,11 @@ function MonitorPage() {
                           {run.folder && (
                             <p className="text-[10px] text-muted-foreground mt-2">
                               Run from: <code className="text-green-300">{run.folder}</code>
+                            </p>
+                          )}
+                          {expanded.run_result?.url && (
+                            <p className="text-[11px] text-emerald-300 mt-1">
+                              Running at: <code className="font-mono">{expanded.run_result.url}</code>
                             </p>
                           )}
                         </div>

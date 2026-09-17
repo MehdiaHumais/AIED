@@ -2855,6 +2855,76 @@ FIXES ALREADY ATTEMPTED:
                 print("[PIPELINE] AUTO-FIX: caniuse-lite reinstalled")
                 fixed_anything = True
 
+        # ---- ERR_PACKAGE_PATH_NOT_EXPORTED (plugin/host major-version mismatch) ----
+        # e.g. "Error [ERR_PACKAGE_PATH_NOT_EXPORTED]: Package subpath './internal' is not
+        # defined by \"exports\" in <proj>/node_modules/vite/package.json imported from
+        # <proj>/node_modules/@vitejs/plugin-react/dist/index.js"
+        # Root cause: the IMPORTER package (e.g. @vitejs/plugin-react@6) requires a NEWER
+        # major of the HOST package (e.g. vite@^8) than what is installed (e.g. vite@^5).
+        # `--legacy-peer-deps` masks this at install time and it explodes at build time.
+        # Fix: align the HOST package to the range the IMPORTER needs. Not a code bug.
+        if not fixed_anything and (
+            "err_package_path_not_exported" in err or 'is not defined by "exports"' in err
+        ):
+            host = None
+            importer = None
+            in_m = _re.search(
+                r'is not defined by "exports" in .*?[\\/]node_modules[\\/](@[^\\/]+[\\/][^\\/]+|[^\\/]+)[\\/]package\.json',
+                err,
+            )
+            imp_m = _re.search(
+                r"imported from .*?[\\/]node_modules[\\/](@[^\\/]+[\\/][^\\/]+|[^\\/]+)[\\/]",
+                err,
+            )
+            if in_m:
+                host = in_m.group(1)
+            if imp_m:
+                importer = imp_m.group(1)
+            if host:
+                host = host.replace("\\", "/")
+            if importer:
+                importer = importer.replace("\\", "/")
+            print(f"[PIPELINE] AUTO-FIX: ERR_PACKAGE_PATH_NOT_EXPORTED host={host} importer={importer}")
+            if host and importer and host != importer:
+                cwd = self._pick_project_cwd(project_folder)
+                try:
+                    peer_out, _, preret = _run_command_tree(
+                        f"npm view {importer} peerDependencies --json", cwd, timeout=120
+                    )
+                    need_range = None
+                    if preret == 0 and peer_out:
+                        try:
+                            peers = json.loads(peer_out.strip().splitlines()[-1])
+                            if isinstance(peers, dict) and host in peers:
+                                need_range = str(peers[host])
+                        except Exception:
+                            need_range = None
+                    if need_range:
+                        print(f"[PIPELINE] AUTO-FIX: {importer} requires {host} {need_range}; aligning")
+                        roots = self._collect_package_json_roots(project_folder)
+                        aligned = False
+                        for root in roots:
+                            _run_command_tree(
+                                f"npm install --save-dev --no-fund --no-audit \"{host}@{need_range}\"",
+                                root, timeout=600,
+                            )
+                            aligned = True
+                        if aligned:
+                            fixed_anything = True
+                            print("[PIPELINE] AUTO-FIX: aligned plugin/host versions, rebuild required")
+                    else:
+                        print(f"[PIPELINE] AUTO-FIX: no peer range for {host} from {importer}; trying latest of both")
+                        roots = self._collect_package_json_roots(project_folder)
+                        for root in roots:
+                            _run_command_tree(
+                                f"npm install --save-dev --no-fund --no-audit {host}@latest {importer}@latest",
+                                root, timeout=600,
+                            )
+                        fixed_anything = True
+                        print("[PIPELINE] AUTO-FIX: updated host+importer to latest, rebuild required")
+                except Exception as e:
+                    print(f"[PIPELINE] AUTO-FIX ERR_PACKAGE_PATH_NOT_EXPORTED raised: {e}")
+
         not_found_sig = (
             _re.search(r"sh:\s*1?:\s*[\w\.\-]+:\s*not found", err)
             or _re.search(r"[\w\.\-]+:\s+command not found", err)
@@ -4195,26 +4265,47 @@ Create an improved plan that addresses all her concerns.""",
     async def _run_project_local(self, task: "PipelineTask", cmd: str, cwd: str):
         """Server-side keep-alive run: streams live until the user stops it.
         Runs without a timeout; stopping cancels the task which kills the tree."""
+        detected_url = {"url": None}
+        def _on_chunk(c):
+            self._append_live_output(task, c)
+            if not detected_url["url"] and c:
+                clean = _re.sub(r"\x1b\[[0-9;]*m", "", c)
+                m = _re.search(r"https?://(?:localhost|127\.0\.0\.1)(?::\d+)[/]?[^\s\x1b]*", clean)
+                if m:
+                    u = m.group(0).rstrip('/')
+                    detected_url["url"] = u
+                    task._run_url = u
+                    self._add_notification("Run Project", f"Your project is running at {u}", task.task_id)
+                    self._persist()
+                    try:
+                        import webbrowser
+                        webbrowser.open(u)
+                    except Exception as e:
+                        print(f"[PIPELINE] Could not open browser: {e}")
         out_s, err_s, retcode = await _run_command_tree_async(
             cmd, cwd, timeout=None,
-            on_chunk=(lambda c: self._append_live_output(task, c)),
+            on_chunk=_on_chunk,
             on_pid=(lambda pid: setattr(task, "_last_pid", pid)),
         )
         combined = (out_s + "\n" + err_s)[-4000:]
+        url = detected_url["url"]
         if retcode == 0:
             task.run_result = {
                 "ok": True, "command": cmd, "output": combined, "finished": True,
                 "note": "Project process finished (exit 0).",
+                "url": url,
             }
         elif retcode == -1:
             task.run_result = {
                 "ok": True, "command": cmd, "output": combined, "finished": False,
                 "note": "Project is running (kept alive until you press Stop).",
+                "url": url,
             }
         else:
             task.run_result = {
                 "ok": False, "command": cmd, "output": combined, "finished": True,
                 "note": f"Project process exited early (code {retcode}).",
+                "url": url,
             }
 
     async def _run_project_remote(self, task: "PipelineTask", cmd: str, folder: str, user_id: str):
@@ -4242,6 +4333,18 @@ Create an improved plan that addresses all her concerns.""",
             content = r.get("content", "")
             if content:
                 task.current_output = content[-6000:]
+                if not getattr(task, "_run_url", None):
+                    clean = _re.sub(r"\x1b\[[0-9;]*m", "", content)
+                    m = _re.search(r"https?://(?:localhost|127\.0\.0\.1)(?::\d+)[/]?[^\s\x1b]*", clean)
+                    if m:
+                        u = m.group(0).rstrip('/')
+                        task._run_url = u
+                        task.run_result = {
+                            "ok": True, "command": cmd, "output": content[-4000:], "finished": False,
+                            "note": f"Project is running at {u}",
+                            "url": u,
+                        }
+                        self._add_notification("Run Project", f"Your project is running at {u}", task.task_id)
                 self._persist()
 
     async def _kill_remote_pid(self, task: "PipelineTask"):
@@ -4602,10 +4705,16 @@ IMPORTANT ERROR-CLASS RULES (read before fixing):
            actual latest version before rebuilding.
        - error TS5023 / "Unknown compiler option '<X>'" is an INVALID tsconfig.json option (agents often hallucinate
            e.g. "use": "ESNext"). Rewrite tsconfig.json with ONLY valid compilerOptions, or remove the bad key.
-       - "Cannot find module 'caniuse-lite/dist/unpacker/agents'" (thrown by next/dist/compiled/browserslist during
-           next build) is node_modules CORRUPTION, NOT a code bug. DO NOT edit source files for it - run:
-           ```bash npm install --force caniuse-lite@latest browserslist@latest ```
-       - "Could not find a declaration file for module '<X>'" means the npm package exists but ships no types:
+- "Cannot find module 'caniuse-lite/dist/unpacker/agents'" (thrown by next/dist/compiled/browserslist during
+            next build) is node_modules CORRUPTION, NOT a code bug. DO NOT edit source files for it - run:
+            ```bash npm install --force caniuse-lite@latest browserslist@latest ```
+        - "ERR_PACKAGE_PATH_NOT_EXPORTED: Package subpath './X' is not defined by \"exports\" in .../node_modules/<HOST>/package.json
+            imported from .../node_modules/<IMPORTER>/..." means a DEPENDENCY VERSION MISMATCH, not a code bug: the importer
+            package (e.g. @vitejs/plugin-react@6) requires a NEWER major of the host (e.g. vite@^8) than package.json pins
+            (e.g. vite@^5). DO NOT edit source files. Fix package.json OR run:
+            ```bash npm install --save-dev --legacy-peer-deps "<HOST>@<required-version-range>" ``` to align the host to
+            what the importer's peerDependencies demands. If unsure of the range, run `npm view <IMPORTER> peerDependencies`.
+        - "Could not find a declaration file for module '<X>'" means the npm package exists but ships no types:
            output: ```bash npm install --save-dev --legacy-peer-deps @types/<X> ``` and never edit node_modules.
        - "Property '<X>' does not exist on type '<Y>'" (or missing required fields when assigning):
             FIRST read the ACTUAL type definition of <Y> to see what fields it has. Then decide which side
@@ -4854,6 +4963,7 @@ IMPORTANT ERROR-CLASS RULES (read before fixing):
 - Think about WHICH FILES must exist for an import to work: every import statement must resolve to a file you output in this same response (you may ADD new files that were missing). 
 - error TS5023 / "Unknown compiler option '<X>'": INVALID tsconfig option - rewrite tsconfig.json with only valid compilerOptions keys.
 - "Cannot find module 'caniuse-lite/dist/unpacker/agents'" (from next/dist/compiled/browserslist) is node_modules corruption, not a code bug. Run `npm install --force caniuse-lite@latest browserslist@latest` - never edit source files for it.
+- "ERR_PACKAGE_PATH_NOT_EXPORTED: Package subpath './X' is not defined by \"exports\" in .../node_modules/<HOST>/package.json imported from .../node_modules/<IMPORTER>/..." is a DEPENDENCY VERSION MISMATCH, not a code bug: the importer (e.g. @vitejs/plugin-react@6) needs a NEWER major of the host (e.g. vite@^8) than package.json pins (e.g. vite@^5). Do NOT edit source files. Align via: `npm install --save-dev --legacy-peer-deps "<HOST>@<required-range>"` (check `npm view <IMPORTER> peerDependencies` for the range).
 - NEVER invent npm dependency versions (e.g. react-chartjs-2@^5.4.0 does not exist): npm install then fails with ETARGET "No matching version found". Write dependencies WITHOUT a version (npm resolves latest) or with the real latest published version. On ETARGET, fix package.json to the actual latest version.
 - "Could not find a declaration file for module '<X>'": the package exists but ships no types; output: ```bash npm install --save-dev --legacy-peer-deps @types/<X> ```.
 - "Property '<X>' does not exist on type '<Y>'" or "Attempted import error: '<name>' is not exported from '<path>'": FIRST read the actual definition of <Y> to see what fields/exports it has. Then:
