@@ -18,7 +18,7 @@ import {
   FileDown,
 } from "lucide-react"
 
-const API = "http://127.0.0.1:8001"
+const API = process.env.NEXT_PUBLIC_API_URL || ""
 
 interface Member {
   id: string
@@ -381,9 +381,17 @@ export default function BoardPage() {
             <div className="space-y-2">
               {reviews.map((review) => (
                 <div key={review.id} className="rounded-lg border border-border/50 bg-background/50">
-                  <button
+                  <div
+                    role="button"
+                    tabIndex={0}
                     onClick={() => toggleDetail(review.id)}
-                    className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-secondary/40 transition-colors"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault()
+                        toggleDetail(review.id)
+                      }
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-secondary/40 transition-colors cursor-pointer"
                   >
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold truncate">{review.request}</p>
@@ -412,7 +420,7 @@ export default function BoardPage() {
                         <RefreshCw className="h-3 w-3" /> Quick Try Again
                       </button>
                     </div>
-                  </button>
+                  </div>
 
                   {expandedId === review.id && (
                     <div className="border-t border-border/50 px-4 py-4">

@@ -32,7 +32,7 @@ export default function SettingsPage() {
     setError("")
     setSaved(false)
     try {
-      const res = await fetch("http://127.0.0.1:8001/api/auth/update-profile", {
+      const res = await fetch("/api/auth/update-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, name: name.trim() }),
@@ -60,7 +60,7 @@ export default function SettingsPage() {
     if (!token) { setPwType("err"); setPwMsg("Not authenticated"); return }
     setChangingPw(true)
     try {
-      const res = await fetch("http://127.0.0.1:8001/api/auth/change-password", {
+      const res = await fetch("/api/auth/change-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, current_password: currPw, new_password: newPw }),

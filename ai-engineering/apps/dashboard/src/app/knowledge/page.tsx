@@ -22,7 +22,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-const API = "http://127.0.0.1:8001"
+const API = process.env.NEXT_PUBLIC_API_URL || ""
 
 interface Repository { id: string; name: string; description: string; icon: string; accent: string; tags: string[]; categories: number; items: number; updated_at: string }
 interface Stats { repositories: number; items: number; categories: number }

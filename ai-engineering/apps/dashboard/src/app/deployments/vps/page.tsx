@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from "react"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { useAuth } from "@/components/auth-provider"
 
-const API = "http://127.0.0.1:8001"
+const API = process.env.NEXT_PUBLIC_API_URL || ""
 
 interface Deployment {
   id: string

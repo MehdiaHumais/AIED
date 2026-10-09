@@ -33,6 +33,7 @@ import {
   FlaskConical,
   MessageSquare,
   Building2,
+  X,
 } from "lucide-react"
 import { useState, useRef, useCallback, useEffect } from "react"
 
@@ -169,11 +170,24 @@ const bottomNav = [
   { name: "Settings", href: "/settings", icon: Settings },
 ]
 
-export function Sidebar() {
+interface SidebarProps {
+  mobileOpen?: boolean
+  onClose?: () => void
+}
+
+export function Sidebar({ mobileOpen = false, onClose }: SidebarProps) {
   const pathname = usePathname()
   const { user } = useAuth()
   const navRef = useRef<HTMLElement>(null)
   const scrollKey = "aied-sidebar-scroll"
+
+  useEffect(() => {
+    if (mobileOpen && onClose) {
+      const handleKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose() }
+      window.addEventListener("keydown", handleKey)
+      return () => window.removeEventListener("keydown", handleKey)
+    }
+  }, [mobileOpen, onClose])
 
   const handleNavClick = useCallback(() => {
     if (navRef.current) {
@@ -206,7 +220,24 @@ export function Sidebar() {
   })
 
   return (
-    <aside className="w-64 border-r border-border bg-card flex flex-col h-full">
+    <>
+      {onClose && (
+        <div
+          onClick={onClose}
+          className={cn(
+            "fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden transition-opacity",
+            mobileOpen ? "opacity-100" : "pointer-events-none opacity-0"
+          )}
+          aria-hidden="true"
+        />
+      )}
+      <aside
+        className={cn(
+          "w-64 border-r border-border bg-card flex flex-col h-full transition-transform duration-200",
+          "fixed top-0 bottom-0 left-0 z-50 lg:static lg:z-auto lg:translate-x-0",
+          onClose ? (mobileOpen ? "translate-x-0" : "-translate-x-full") : ""
+        )}
+      >
       <div className="flex h-16 items-center border-b border-border px-6 shrink-0">
         <div className="flex items-center gap-2">
           <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
@@ -217,10 +248,23 @@ export function Sidebar() {
             <p className="text-xs text-muted-foreground">Britsync AI Company</p>
           </div>
         </div>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="ml-auto rounded-lg p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground lg:hidden"
+            aria-label="Close menu"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        )}
       </div>
       <nav
         ref={navRef}
         className="flex flex-col gap-1 p-4 flex-1 overflow-y-auto"
+        onClick={(e) => {
+          const closest = (e.target as HTMLElement).closest("a")
+          if (closest && onClose) onClose()
+        }}
         onScroll={() => {
           if (navRef.current) {
             try { sessionStorage.setItem(scrollKey, String(navRef.current.scrollTop)) } catch {}
@@ -285,6 +329,7 @@ export function Sidebar() {
           )
         })}
       </div>
-    </aside>
+      </aside>
+    </>
   )
 }

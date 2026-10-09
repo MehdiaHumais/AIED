@@ -142,9 +142,9 @@ export default function ProjectsPage() {
   const fetchData = () => {
     const uid = user?.id ? `?user_id=${user.id}` : ""
     Promise.all([
-      fetch(`http://127.0.0.1:8001/api/projects${uid}`).then((r) => r.json()),
-      fetch("http://127.0.0.1:8001/api/tasks").then((r) => r.json()),
-      fetch("http://127.0.0.1:8001/api/pipelines").then((r) => r.json()),
+      fetch(`/api/projects${uid}`).then((r) => r.json()),
+      fetch("/api/tasks").then((r) => r.json()),
+      fetch("/api/pipelines").then((r) => r.json()),
     ])
       .then(([projData, taskData, pipeData]) => {
         setProjects(projData.projects || [])
@@ -156,7 +156,7 @@ export default function ProjectsPage() {
         setLoading(false)
       })
       .catch(() => {
-        setError("Could not connect to API at http://127.0.0.1:8001")
+        setError("Could not connect to API server")
         setLoading(false)
       })
   }
@@ -169,13 +169,13 @@ export default function ProjectsPage() {
     pollBusyRef.current = true
     const uid = user?.id || ""
     Promise.all([
-      fetch("http://127.0.0.1:8001/api/tasks")
+      fetch("/api/tasks")
         .then((r) => r.json())
         .catch(() => null),
-      fetch("http://127.0.0.1:8001/api/pipelines")
+      fetch("/api/pipelines")
         .then((r) => r.json())
         .catch(() => null),
-      fetch(`http://127.0.0.1:8001/api/agent/status?user_id=${uid}`)
+      fetch(`/api/agent/status?user_id=${uid}`)
         .then((r) => r.json())
         .catch(() => null),
     ])
@@ -207,7 +207,7 @@ export default function ProjectsPage() {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const qs = user?.id ? `?user_id=${user.id}` : ""
-        const res = await fetch(`http://127.0.0.1:8001/api/agent/select-folder${qs}`)
+        const res = await fetch(`/api/agent/select-folder${qs}`)
         const data = await res.json()
         if (data.path) { setTarget(data.path); return }
         if (data.error) {
@@ -247,7 +247,7 @@ export default function ProjectsPage() {
       let res: Response | null = null
       for (let i = 0; i < 3; i++) {
         try {
-          res = await fetch("http://127.0.0.1:8001/api/projects", {
+          res = await fetch("/api/projects", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -273,14 +273,14 @@ export default function ProjectsPage() {
         setShowCreateProject(false)
         fetchData()
         if (newProject.folder) {
-          fetch(`http://127.0.0.1:8001/api/projects/${data.project.id}/set-folder`, {
+          fetch(`/api/projects/${data.project.id}/set-folder`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ folder: newProject.folder }),
           }).catch(() => {})
         }
         if (newProject.mode) {
-          fetch(`http://127.0.0.1:8001/api/projects/${data.project.id}/set-mode`, {
+          fetch(`/api/projects/${data.project.id}/set-mode`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ mode: newProject.mode }),
@@ -307,7 +307,7 @@ export default function ProjectsPage() {
       }
       cloningId.current = project.id
       setError("Cloning repository... please choose a destination folder in the dialog.")
-      const res = await fetch(`http://127.0.0.1:8001/api/projects/${project.id}/clone`, {
+      const res = await fetch(`/api/projects/${project.id}/clone`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ repository_url: repoUrl }),
@@ -335,7 +335,7 @@ export default function ProjectsPage() {
       let res: Response | null = null
       for (let i = 0; i < 3; i++) {
         try {
-          res = await fetch("http://127.0.0.1:8001/api/tasks", {
+          res = await fetch("/api/tasks", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -367,7 +367,7 @@ export default function ProjectsPage() {
   const startPipeline = async (taskId: string) => {
     setError("")
     try {
-      const res = await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/start`, {
+      const res = await fetch(`/api/pipeline/${taskId}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -386,7 +386,7 @@ export default function ProjectsPage() {
   const startTesting = async (taskId: string) => {
     setError("")
     try {
-      const res = await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/start-testing`, {
+      const res = await fetch(`/api/pipeline/${taskId}/start-testing`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -408,7 +408,7 @@ export default function ProjectsPage() {
   }
 
   const approvePlan = async (taskId: string) => {
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/approve-plan`, { method: "POST" })
+    await fetch(`/api/pipeline/${taskId}/approve-plan`, { method: "POST" })
   }
 
   const rejectPlan = async (taskId: string) => {
@@ -417,7 +417,7 @@ export default function ProjectsPage() {
 
   const submitRejection = async () => {
     if (!showRejectModal) return
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${showRejectModal}/reject-plan`, {
+    await fetch(`/api/pipeline/${showRejectModal}/reject-plan`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ feedback: rejectionFeedback }),
@@ -427,11 +427,11 @@ export default function ProjectsPage() {
   }
 
   const approveDeploy = async (taskId: string) => {
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/approve-deploy`, { method: "POST" })
+    await fetch(`/api/pipeline/${taskId}/approve-deploy`, { method: "POST" })
   }
 
   const prebuiltAction = async (taskId: string, action: string) => {
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/prebuilt-action`, {
+    await fetch(`/api/pipeline/${taskId}/prebuilt-action`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, description: prebuiltDesc }),
@@ -441,7 +441,7 @@ export default function ProjectsPage() {
   }
 
   const solveIssues = async (taskId: string) => {
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/solve-issues`, {
+    await fetch(`/api/pipeline/${taskId}/solve-issues`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ description: prebuiltDesc }),
@@ -451,7 +451,7 @@ export default function ProjectsPage() {
   }
 
   const stopPipeline = async (taskId: string) => {
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/stop`, { method: "POST" })
+    await fetch(`/api/pipeline/${taskId}/stop`, { method: "POST" })
     fetchData()
   }
 
@@ -459,7 +459,7 @@ export default function ProjectsPage() {
 
   const submitIssue = async (taskId: string) => {
     if (!issueDesc.trim()) return
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/submit-issue`, {
+    await fetch(`/api/pipeline/${taskId}/submit-issue`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ description: issueDesc }),
@@ -484,7 +484,7 @@ export default function ProjectsPage() {
 
   const submitReplanRestart = async () => {
     if (!showReplanModalTask) return
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${showReplanModalTask.id}/restart`, {
+    await fetch(`/api/pipeline/${showReplanModalTask.id}/restart`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: replanTitle, description: replanDescription }),
@@ -496,7 +496,7 @@ export default function ProjectsPage() {
   }
 
   const quickRestartLayer1 = async (taskId: string) => {
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/restart`, {
+    await fetch(`/api/pipeline/${taskId}/restart`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({}),
@@ -506,13 +506,13 @@ export default function ProjectsPage() {
 
   const deleteProject = async (projectId: string) => {
     if (!confirm("Delete this project and all its tasks?")) return
-    await fetch(`http://127.0.0.1:8001/api/projects/${projectId}`, { method: "DELETE" })
+    await fetch(`/api/projects/${projectId}`, { method: "DELETE" })
     fetchData()
   }
 
   const deleteTask = async (taskId: string) => {
     if (!confirm("Delete this task?")) return
-    await fetch(`http://127.0.0.1:8001/api/tasks/${taskId}`, { method: "DELETE" })
+    await fetch(`/api/tasks/${taskId}`, { method: "DELETE" })
     fetchData()
   }
 
@@ -525,7 +525,7 @@ export default function ProjectsPage() {
 
   const saveEditProject = async () => {
     if (!editProject) return
-    await fetch(`http://127.0.0.1:8001/api/projects/${editProject.id}`, {
+    await fetch(`/api/projects/${editProject.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: editName, codename: editCodename, description: editDesc }),
@@ -543,7 +543,7 @@ export default function ProjectsPage() {
 
   const saveEditTask = async () => {
     if (!editTask) return
-    await fetch(`http://127.0.0.1:8001/api/tasks/${editTask.id}`, {
+    await fetch(`/api/tasks/${editTask.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: editName, description: editDesc, priority: editPriority }),
@@ -730,7 +730,7 @@ export default function ProjectsPage() {
               </div>
               <div className="flex gap-1">
                 <button onClick={() => pickFolder(async (path) => {
-                    await fetch(`http://127.0.0.1:8001/api/projects/${project.id}/set-folder`, {
+                    await fetch(`/api/projects/${project.id}/set-folder`, {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ folder: path }),

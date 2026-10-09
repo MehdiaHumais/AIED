@@ -35,7 +35,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchUser = async (tok: string) => {
     try {
-      const res = await fetch(`http://127.0.0.1:8001/api/auth/me?token=${encodeURIComponent(tok)}`)
+      const res = await fetch(`/api/auth/me?token=${encodeURIComponent(tok)}`)
       const data = await res.json()
       if (data.user) {
         setUser(data.user)
@@ -60,7 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string) => {
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        const res = await fetch("http://127.0.0.1:8001/api/auth/login", {
+        const res = await fetch("/api/auth/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email, password }),
@@ -85,7 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signup = async (signupData: { name: string; email: string; password: string; company_name?: string; company_role?: string; company_size?: string; company_website?: string }) => {
     try {
-      const res = await fetch("http://127.0.0.1:8001/api/auth/signup", {
+      const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(signupData),

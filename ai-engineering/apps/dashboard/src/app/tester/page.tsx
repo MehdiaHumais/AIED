@@ -93,9 +93,9 @@ export default function TesterPage() {
     if (!force && (pollBusyRef.current || formOpenRef.current || document.hidden)) return
     pollBusyRef.current = true
     Promise.all([
-      fetch("http://127.0.0.1:8001/api/tasks?task_mode=tester").then((r) => r.json()),
-      fetch("http://127.0.0.1:8001/api/pipelines").then((r) => r.json()),
-      fetch("http://127.0.0.1:8001/api/projects").then((r) => r.json()),
+      fetch("/api/tasks?task_mode=tester").then((r) => r.json()),
+      fetch("/api/pipelines").then((r) => r.json()),
+      fetch("/api/projects").then((r) => r.json()),
     ])
       .then(([taskData, pipeData, projData]) => {
         setTasks(taskData.tasks || [])
@@ -105,7 +105,7 @@ export default function TesterPage() {
         setLoading(false)
       })
       .catch(() => {
-        setError("Could not connect to API at http://127.0.0.1:8001")
+        setError("Could not connect to API server")
         setLoading(false)
       })
       .finally(() => { pollBusyRef.current = false })
@@ -123,7 +123,7 @@ export default function TesterPage() {
     setCreating(true)
     setError("")
     try {
-      const res = await fetch("http://127.0.0.1:8001/api/tasks", {
+      const res = await fetch("/api/tasks", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -166,11 +166,11 @@ export default function TesterPage() {
     }
   }
 
-  const startTesting = (taskId: string) => postAction(`http://127.0.0.1:8001/api/pipeline/${taskId}/start-testing`)
+  const startTesting = (taskId: string) => postAction(`/api/pipeline/${taskId}/start-testing`)
 
-  const fixWithDevTeam = (taskId: string) => postAction(`http://127.0.0.1:8001/api/pipeline/${taskId}/fix-with-dev-team`)
+  const fixWithDevTeam = (taskId: string) => postAction(`/api/pipeline/${taskId}/fix-with-dev-team`)
 
-  const stopPipeline = (taskId: string) => postAction(`http://127.0.0.1:8001/api/pipeline/${taskId}/stop`)
+  const stopPipeline = (taskId: string) => postAction(`/api/pipeline/${taskId}/stop`)
 
   const runningStages = ["testing", "fixing", "building", "checking"]
 

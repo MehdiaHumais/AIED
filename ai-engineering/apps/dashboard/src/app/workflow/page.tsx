@@ -29,7 +29,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-const API = "http://127.0.0.1:8001"
+const API = process.env.NEXT_PUBLIC_API_URL || ""
 
 interface StageDef { key: string; name: string; layer: number; short: string }
 interface RunSummary { id: string; name: string; request: string; status: string; stage_index: number; current_stage: string | null; approved_stages: number; total_stages: number; created_at: string; completed_at: string | null }

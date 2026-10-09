@@ -20,7 +20,7 @@ import {
   Lightbulb,
 } from "lucide-react"
 
-const API = "http://127.0.0.1:8001"
+const API = process.env.NEXT_PUBLIC_API_URL || ""
 
 const SUBJECT_TYPES = [
   { id: "project", label: "Completed Project" },

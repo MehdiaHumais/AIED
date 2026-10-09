@@ -95,12 +95,12 @@ export default function DeploymentsPage() {
   const pollRef = useRef<NodeJS.Timeout | null>(null)
 
   const fetchData = () => {
-    fetch("http://127.0.0.1:8001/api/pipelines")
+    fetch("/api/pipelines")
       .then((r) => r.json())
       .then((data) => setPipelines(data.pipelines || {}))
       .catch(() => {})
 
-    fetch("http://127.0.0.1:8001/api/projects")
+    fetch("/api/projects")
       .then((r) => r.json())
       .then((data) => setProjects(data.projects || []))
       .catch(() => {})
@@ -121,7 +121,7 @@ export default function DeploymentsPage() {
     setBrowserLoading(true)
     setShowBrowser(true)
     try {
-      const url = dir ? `http://127.0.0.1:8001/api/browse-apk?directory=${encodeURIComponent(dir)}` : "http://127.0.0.1:8001/api/browse-apk"
+      const url = dir ? `/api/browse-apk?directory=${encodeURIComponent(dir)}` : "/api/browse-apk"
       const res = await fetch(url)
       const data = await res.json()
       if (data.error) {
@@ -163,7 +163,7 @@ export default function DeploymentsPage() {
     setCheckingPkg(true)
     setDeployResult("Checking store...")
     try {
-      const res = await fetch(`http://127.0.0.1:8001/api/store/check-package/${encodeURIComponent(deployForm.package_name)}`)
+      const res = await fetch(`/api/store/check-package/${encodeURIComponent(deployForm.package_name)}`)
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: "Request failed" }))
         setDeployResult(`Check failed: ${err.error || res.statusText}`)
@@ -197,7 +197,7 @@ export default function DeploymentsPage() {
       if (mediaIcon) fd.append("icon", mediaIcon)
       for (const f of mediaMobile) fd.append("mobile_screenshots", f)
       for (const f of mediaTablet) fd.append("tablet_screenshots", f)
-      const res = await fetch("http://127.0.0.1:8001/api/store/upload-media", { method: "POST", body: fd })
+      const res = await fetch("/api/store/upload-media", { method: "POST", body: fd })
       const data = await res.json()
       if (data.error) {
         setMediaResult(`Error: ${data.error}`)
@@ -224,10 +224,10 @@ export default function DeploymentsPage() {
       let url: string
       let body: Record<string, unknown>
       if (selectedTask && selectedTask !== "new") {
-        url = `http://127.0.0.1:8001/api/pipeline/${selectedTask}/deploy-to-store`
+        url = `/api/pipeline/${selectedTask}/deploy-to-store`
         body = deployForm
       } else {
-        url = `http://127.0.0.1:8001/api/deploy-apk`
+        url = `/api/deploy-apk`
         body = deployForm
       }
       const res = await fetch(url, {
@@ -255,22 +255,22 @@ export default function DeploymentsPage() {
   }
 
   const approveDeploy = async (taskId: string) => {
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/approve-deploy`, { method: "POST" })
+    await fetch(`/api/pipeline/${taskId}/approve-deploy`, { method: "POST" })
     fetchData()
   }
 
   const startPipeline = async (taskId: string) => {
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/start`, { method: "POST" })
+    await fetch(`/api/pipeline/${taskId}/start`, { method: "POST" })
     fetchData()
   }
 
   const stopPipeline = async (taskId: string) => {
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/stop`, { method: "POST" })
+    await fetch(`/api/pipeline/${taskId}/stop`, { method: "POST" })
     fetchData()
   }
 
   const deletePipeline = async (taskId: string) => {
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}`, { method: "DELETE" })
+    await fetch(`/api/pipeline/${taskId}`, { method: "DELETE" })
     fetchData()
   }
 

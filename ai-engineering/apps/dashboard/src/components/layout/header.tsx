@@ -1,6 +1,6 @@
 "use client"
 
-import { Bell, Search, X, Sun, Moon, LogOut, Shield, Monitor } from "lucide-react"
+import { Bell, Search, X, Sun, Moon, LogOut, Shield, Monitor, Menu } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useEffect, useState, useRef } from "react"
 import { useTheme } from "@/components/theme-provider"
@@ -15,7 +15,7 @@ interface Notification {
   read: boolean
 }
 
-export function Header() {
+export function Header({ onMenuClick }: { onMenuClick?: () => void }) {
   const router = useRouter()
   const { theme, toggle } = useTheme()
   const { user, logout } = useAuth()
@@ -28,7 +28,7 @@ export function Header() {
 
   const fetchNotifs = () => {
     const uid = user?.id ? `?user_id=${user.id}` : ""
-    fetch(`http://127.0.0.1:8001/api/notifications${uid}`)
+    fetch(`/api/notifications${uid}`)
       .then((r) => r.json())
       .then((d) => {
         const incoming = d.notifications || []
@@ -45,7 +45,7 @@ export function Header() {
     fetchNotifs()
     pollRef.current = setInterval(fetchNotifs, 5000)
     const agentPoll = setInterval(() => {
-      fetch(`http://127.0.0.1:8001/api/agent/status?user_id=${user.id}`)
+      fetch(`/api/agent/status?user_id=${user.id}`)
         .then(r => r.json())
         .then(d => {
           setAgentConnected(d.connected || false)
@@ -69,7 +69,7 @@ export function Header() {
   const unreadCount = notifications.filter((n) => !n.read).length
 
   const clearAllNotifications = () => {
-    fetch("http://127.0.0.1:8001/api/notifications", { method: "DELETE" })
+    fetch("/api/notifications", { method: "DELETE" })
       .then(() => setNotifications([]))
       .catch(() => {})
   }
@@ -82,7 +82,7 @@ export function Header() {
   }
 
   const handleNotifClick = (n: Notification, idx: number) => {
-    fetch(`http://127.0.0.1:8001/api/notifications/${idx}/read`, { method: "POST" })
+    fetch(`/api/notifications/${idx}/read`, { method: "POST" })
     if (n.task_id) {
       router.push(`/monitor?task=${n.task_id}`)
     }
@@ -97,18 +97,29 @@ export function Header() {
   const userInitial = user?.name?.[0]?.toUpperCase() || "U"
 
   return (
-    <header className="flex h-16 items-center justify-between border-b border-border px-6">
-      <div className="flex items-center gap-4">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Search projects, tasks, agents..."
-            className="h-9 w-96 rounded-lg border border-border bg-background pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-          />
+    <header className="flex h-16 items-center justify-between gap-3 border-b border-border px-4 lg:px-6">
+      <div className="flex min-w-0 items-center gap-2 lg:gap-4">
+        {onMenuClick && (
+          <button
+            onClick={onMenuClick}
+            className="rounded-lg p-2 hover:bg-secondary transition-colors lg:hidden"
+            aria-label="Open menu"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+        )}
+        <div className="hidden md:block">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <input
+              type="text"
+              placeholder="Search projects, tasks, agents..."
+              className="h-9 w-56 lg:w-96 rounded-lg border border-border bg-background pl-10 pr-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
         </div>
       </div>
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 lg:gap-4">
         <div className="relative" ref={notifRef}>
           <button onClick={() => setShowNotifs(!showNotifs)} className="relative rounded-lg p-2 hover:bg-secondary">
             <Bell className="h-5 w-5" />
@@ -120,7 +131,7 @@ export function Header() {
           </button>
 
           {showNotifs && (
-            <div className="absolute right-0 top-full z-50 mt-2 w-96 max-h-[500px] overflow-y-auto rounded-lg border border-border bg-background shadow-xl">
+            <div className="fixed right-4 top-16 z-50 w-[calc(100vw-2rem)] max-w-sm max-h-[70vh] overflow-y-auto rounded-lg border border-border bg-background shadow-xl">
               <div className="flex items-center justify-between border-b border-border px-4 py-3">
                 <span className="text-sm font-semibold text-foreground">Notifications</span>
                 <div className="flex items-center gap-2">
@@ -162,7 +173,7 @@ export function Header() {
             </div>
           )}
         </div>
-        <div className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5" title={agentConnected ? `Agent connected — ${agentFolder || "folder set"}` : "Agent disconnected"}>
+        <div className="hidden sm:flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5" title={agentConnected ? `Agent connected — ${agentFolder || "folder set"}` : "Agent disconnected"}>
           <span className={`h-2 w-2 rounded-full ${agentConnected ? "bg-green-500 animate-pulse" : "bg-zinc-500"}`} />
           <Monitor className="h-4 w-4 text-muted-foreground" />
           <span className="text-[11px] text-muted-foreground">{agentConnected ? "Local Agent" : "No Agent"}</span>
@@ -171,7 +182,7 @@ export function Header() {
           {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
         </button>
         {user?.is_admin && (
-          <button onClick={() => router.push("/admin")} className="rounded-lg p-2 hover:bg-secondary transition-colors" title="Admin Dashboard">
+          <button onClick={() => router.push("/admin")} className="hidden sm:inline-flex rounded-lg p-2 hover:bg-secondary transition-colors" title="Admin Dashboard">
             <Shield className="h-5 w-5" />
           </button>
         )}
@@ -179,11 +190,11 @@ export function Header() {
           <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center">
             <span className="text-xs font-medium text-primary">{userInitial}</span>
           </div>
-          <div>
-            <p className="text-sm font-medium text-foreground">{user?.name || "User"}</p>
-            <p className="text-xs text-muted-foreground">{user?.is_admin ? "Admin" : user?.company_name || "Member"}</p>
+          <div className="hidden md:block">
+            <p className="text-sm font-medium text-foreground leading-tight">{user?.name || "User"}</p>
+            <p className="text-xs text-muted-foreground leading-tight">{user?.is_admin ? "Admin" : user?.company_name || "Member"}</p>
           </div>
-          <button onClick={handleLogout} className="ml-2 rounded-lg p-1.5 hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors" title="Logout">
+          <button onClick={handleLogout} className="rounded-lg p-1.5 hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-colors" title="Logout">
             <LogOut className="h-4 w-4" />
           </button>
         </div>

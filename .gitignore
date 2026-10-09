@@ -17,3 +17,19 @@ Thumbs.db
 .vscode/
 .idea/
 ai-engineering/apps/dashboard/tsconfig.tsbuildinfo
+
+# AIED mobile app artifacts
+aied-mobile.apk
+ai-engineering/apps/dashboard/android/.gradle/
+ai-engineering/apps/dashboard/android/build/
+ai-engineering/apps/dashboard/android/app/build/
+ai-engineering/apps/dashboard/android/local.properties
+ai-engineering/apps/dashboard/android/capacitor-cordova-android-plugins/
+
+# Screenshots / scratch
+sc/
+0
+desktop_pid.txt
+
+# Duplicate untracked desktop bundle (real one is ai-engineering/desktop)
+/desktop/

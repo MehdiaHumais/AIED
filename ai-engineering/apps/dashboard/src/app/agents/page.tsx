@@ -5,7 +5,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { Bot, Send, StopCircle, FolderOpen, X, Loader2, CheckCircle2, Terminal, FileCode2, AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-const API = "http://127.0.0.1:8001"
+const API = process.env.NEXT_PUBLIC_API_URL || ""
 
 interface Agent { id: string; name: string; role: string; department: string; model: string; capabilities: string[]; status: string; tasks_completed: number; tasks_failed: number; current_task: string | null }
 interface ChatMessage { role: "user" | "agent"; content: string; timestamp: string; files_written?: { path: string; size: number }[]; commands_run?: { command: string; stdout: string; stderr: string; returncode: number; error?: string }[]; errors?: { path: string; error: string }[] }

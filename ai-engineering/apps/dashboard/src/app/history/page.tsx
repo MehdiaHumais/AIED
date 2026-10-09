@@ -37,7 +37,7 @@ export default function HistoryPage() {
 
   const fetchNotifs = () => {
     const uid = user?.id ? `?user_id=${user.id}` : ""
-    fetch(`http://127.0.0.1:8001/api/notifications${uid}`)
+    fetch(`/api/notifications${uid}`)
       .then((r) => r.json())
       .then((d) => {
         setNotifications(d.notifications || [])
@@ -56,13 +56,13 @@ export default function HistoryPage() {
   }, [user?.id])
 
   const clearAll = () => {
-    fetch("http://127.0.0.1:8001/api/notifications", { method: "DELETE" })
+    fetch("/api/notifications", { method: "DELETE" })
       .then(() => setNotifications([]))
       .catch(() => {})
   }
 
   const markRead = (idx: number) => {
-    fetch(`http://127.0.0.1:8001/api/notifications/${idx}/read`, { method: "POST" })
+    fetch(`/api/notifications/${idx}/read`, { method: "POST" })
       .then(() => fetchNotifs())
       .catch(() => {})
   }

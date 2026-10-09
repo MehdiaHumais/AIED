@@ -37,8 +37,8 @@ export default function AdminPage() {
     setLoading(true)
     try {
       const [pendingRes, allRes] = await Promise.all([
-        fetch("http://127.0.0.1:8001/api/auth/pending-users"),
-        fetch("http://127.0.0.1:8001/api/auth/all-users"),
+        fetch("/api/auth/pending-users"),
+        fetch("/api/auth/all-users"),
       ])
       const pendingData = await pendingRes.json()
       const allData = await allRes.json()
@@ -55,7 +55,7 @@ export default function AdminPage() {
   const approveUser = async (userId: string) => {
     setActionLoading(userId)
     try {
-      await fetch(`http://127.0.0.1:8001/api/auth/approve/${userId}`, { method: "POST" })
+      await fetch(`/api/auth/approve/${userId}`, { method: "POST" })
       await fetchUsers()
     } catch {}
     setActionLoading(null)
@@ -64,7 +64,7 @@ export default function AdminPage() {
   const rejectUser = async (userId: string) => {
     setActionLoading(userId)
     try {
-      await fetch(`http://127.0.0.1:8001/api/auth/reject/${userId}`, { method: "POST" })
+      await fetch(`/api/auth/reject/${userId}`, { method: "POST" })
       await fetchUsers()
     } catch {}
     setActionLoading(null)
@@ -74,7 +74,7 @@ export default function AdminPage() {
     if (!confirm("Delete this user permanently?")) return
     setActionLoading(userId)
     try {
-      await fetch(`http://127.0.0.1:8001/api/auth/delete/${userId}`, { method: "POST" })
+      await fetch(`/api/auth/delete/${userId}`, { method: "POST" })
       await fetchUsers()
     } catch {}
     setActionLoading(null)

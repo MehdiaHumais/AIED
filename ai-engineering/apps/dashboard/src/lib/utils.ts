@@ -5,7 +5,7 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001"
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || ""
 
 export async function apiFetch<T>(
   endpoint: string,

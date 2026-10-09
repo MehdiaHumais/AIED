@@ -208,12 +208,12 @@ function MonitorPage() {
 
   const fetchPipelines = async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8001/api/pipelines")
+      const res = await fetch("/api/pipelines")
       const data = await res.json()
       let updatedPipelines = data.pipelines || {}
       
       if (focusTask) {
-        const detailRes = await fetch(`http://127.0.0.1:8001/api/pipeline/${focusTask}`)
+        const detailRes = await fetch(`/api/pipeline/${focusTask}`)
         const detailData = await detailRes.json()
         if (!detailData.error) {
           updatedPipelines = { ...updatedPipelines, [focusTask]: detailData }
@@ -228,7 +228,7 @@ function MonitorPage() {
 
   useEffect(() => { fetchPipelines() }, [])
   useEffect(() => {
-    fetch("http://127.0.0.1:8001/api/approval/settings")
+    fetch("/api/approval/settings")
       .then((r) => r.json())
       .then((d) => { if (typeof d?.require_step_approval === "boolean") setRequireStepApproval(d.require_step_approval) })
       .catch(() => {})
@@ -241,7 +241,7 @@ function MonitorPage() {
   useEffect(() => {
     if (focusTask) {
       setExpandedTask(focusTask)
-      fetch(`http://127.0.0.1:8001/api/pipeline/${focusTask}`)
+      fetch(`/api/pipeline/${focusTask}`)
         .then((r) => r.json())
         .then((data) => {
           if (!data.error) {
@@ -253,7 +253,7 @@ function MonitorPage() {
   }, [focusTask])
 
   const approvePlan = async (taskId: string) => {
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/approve-plan`, { method: "POST" })
+    await fetch(`/api/pipeline/${taskId}/approve-plan`, { method: "POST" })
     fetchPipelines()
   }
 
@@ -263,7 +263,7 @@ function MonitorPage() {
 
   const submitRejection = async () => {
     if (!showRejectModal) return
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${showRejectModal}/reject-plan`, {
+    await fetch(`/api/pipeline/${showRejectModal}/reject-plan`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ feedback: rejectionFeedback }),
@@ -274,29 +274,29 @@ function MonitorPage() {
   }
 
   const approveStep = async (taskId: string) => {
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/approve-step`, { method: "POST" })
+    await fetch(`/api/pipeline/${taskId}/approve-step`, { method: "POST" })
     fetchPipelines()
   }
 
   const rejectStep = async (taskId: string) => {
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/reject-step`, { method: "POST" })
+    await fetch(`/api/pipeline/${taskId}/reject-step`, { method: "POST" })
     fetchPipelines()
   }
 
   const runProject = async (taskId: string) => {
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/run-project`, { method: "POST" })
+    await fetch(`/api/pipeline/${taskId}/run-project`, { method: "POST" })
     fetchPipelines()
   }
 
   const stopProject = async (taskId: string) => {
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/stop-project`, { method: "POST" })
+    await fetch(`/api/pipeline/${taskId}/stop-project`, { method: "POST" })
     fetchPipelines()
   }
 
   const toggleStepApproval = async (value: boolean) => {
     setRequireStepApproval(value)
     try {
-      await fetch("http://127.0.0.1:8001/api/approval/settings", {
+      await fetch("/api/approval/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ require_step_approval: value }),
@@ -308,12 +308,12 @@ function MonitorPage() {
   }
 
   const approveDeploy = async (taskId: string) => {
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/approve-deploy`, { method: "POST" })
+    await fetch(`/api/pipeline/${taskId}/approve-deploy`, { method: "POST" })
     fetchPipelines()
   }
 
   const prebuiltAction = async (taskId: string, action: string) => {
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/prebuilt-action`, {
+    await fetch(`/api/pipeline/${taskId}/prebuilt-action`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, description: prebuiltDesc }),
@@ -336,7 +336,7 @@ function MonitorPage() {
       const p = expanded
       const projectId = p?.project_id || ""
       if (!projectId) throw new Error("No project associated with this task")
-      const zipRes = await fetch(`http://127.0.0.1:8001/api/projects/${projectId}/zip`, {
+      const zipRes = await fetch(`/api/projects/${projectId}/zip`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
@@ -353,7 +353,7 @@ function MonitorPage() {
   }
 
   const solveIssues = async (taskId: string) => {
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/solve-issues`, {
+    await fetch(`/api/pipeline/${taskId}/solve-issues`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ description: prebuiltDesc }),
@@ -363,7 +363,7 @@ function MonitorPage() {
   }
 
   const deployToStore = async (taskId: string) => {
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/deploy-to-store`, {
+    await fetch(`/api/pipeline/${taskId}/deploy-to-store`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(deployForm),
@@ -374,14 +374,14 @@ function MonitorPage() {
   }
 
   const stopPipeline = async (taskId: string) => {
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/stop`, { method: "POST" })
+    await fetch(`/api/pipeline/${taskId}/stop`, { method: "POST" })
     fetchPipelines()
   }
 
   const submitIssue = async (taskId: string) => {
     if (!issueDesc.trim()) return
     try {
-      const res = await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/submit-issue`, {
+      const res = await fetch(`/api/pipeline/${taskId}/submit-issue`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ description: issueDesc }),
@@ -400,17 +400,17 @@ function MonitorPage() {
 
   const deleteTask = async (taskId: string) => {
     if (!confirm("Delete this task?")) return
-    await fetch(`http://127.0.0.1:8001/api/tasks/${taskId}`, { method: "DELETE" })
+    await fetch(`/api/tasks/${taskId}`, { method: "DELETE" })
     fetchPipelines()
   }
 
   const restartPipeline = async (taskId: string) => {
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/restart`, { method: "POST" })
+    await fetch(`/api/pipeline/${taskId}/restart`, { method: "POST" })
     fetchPipelines()
   }
 
   const rebuildTask = async (taskId: string) => {
-    await fetch(`http://127.0.0.1:8001/api/pipeline/${taskId}/rebuild`, { method: "POST" })
+    await fetch(`/api/pipeline/${taskId}/rebuild`, { method: "POST" })
     fetchPipelines()
   }
 

@@ -74,10 +74,10 @@ export default function DashboardPage() {
   const fetchData = () => {
     const uid = user?.id ? `?user_id=${user.id}` : ""
     Promise.all([
-      fetch(`http://127.0.0.1:8001/api/dashboard${uid}`).then((r) => r.json()),
-      fetch("http://127.0.0.1:8001/api/agents").then((r) => r.json()),
-      fetch("http://127.0.0.1:8001/api/tasks").then((r) => r.json()),
-      fetch(`http://127.0.0.1:8001/api/helper-activity${uid}`).then((r) => r.json()).catch(() => ({ entries: [] })),
+      fetch(`/api/dashboard${uid}`).then((r) => r.json()),
+      fetch("/api/agents").then((r) => r.json()),
+      fetch("/api/tasks").then((r) => r.json()),
+      fetch(`/api/helper-activity${uid}`).then((r) => r.json()).catch(() => ({ entries: [] })),
     ])
       .then(([dashData, agentData, taskData, helperData]) => {
         setDashboard(dashData)
@@ -95,10 +95,10 @@ export default function DashboardPage() {
     pollRef.current = setInterval(() => {
       const uid = user?.id ? `?user_id=${user.id}` : ""
       Promise.all([
-        fetch(`http://127.0.0.1:8001/api/dashboard${uid}`).then((r) => r.json()).catch(() => null),
-        fetch("http://127.0.0.1:8001/api/agents").then((r) => r.json()).catch(() => null),
-        fetch("http://127.0.0.1:8001/api/tasks").then((r) => r.json()).catch(() => null),
-        fetch(`http://127.0.0.1:8001/api/helper-activity${uid}`).then((r) => r.json()).catch(() => ({ entries: [] })),
+        fetch(`/api/dashboard${uid}`).then((r) => r.json()).catch(() => null),
+        fetch("/api/agents").then((r) => r.json()).catch(() => null),
+        fetch("/api/tasks").then((r) => r.json()).catch(() => null),
+        fetch(`/api/helper-activity${uid}`).then((r) => r.json()).catch(() => ({ entries: [] })),
       ])
         .then(([dashData, agentData, taskData, helperData]) => {
           if (dashData) setDashboard(dashData)
