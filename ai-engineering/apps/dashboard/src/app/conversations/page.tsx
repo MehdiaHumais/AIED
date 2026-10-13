@@ -141,7 +141,7 @@ export default function ConversationsPage() {
 
   return (
     <DashboardLayout>
-      <div className="flex h-[calc(100vh-4rem)] gap-4">
+      <div className="flex h-[calc(var(--app-vh)-4rem)] gap-4">
         {/* Sidebar - Conversation List */}
         <div className="w-72 border border-border rounded-lg flex flex-col bg-card">
           <div className="p-3 border-b border-border flex items-center justify-between">

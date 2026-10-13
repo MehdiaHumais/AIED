@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { useAuth } from "@/components/auth-provider"
+import { isNativeApp } from "@/lib/utils"
 import { Monitor } from "lucide-react"
 
 interface Project {
@@ -135,6 +136,11 @@ export default function ProjectsPage() {
   const [prebuiltDesc, setPrebuiltDesc] = useState("")
   const [agentConnected, setAgentConnected] = useState(false)
   const [agentFolder, setAgentFolder] = useState("")
+  const [isNative, setIsNative] = useState(false)
+
+  useEffect(() => {
+    setIsNative(isNativeApp())
+  }, [])
 
   const [newProject, setNewProject] = useState({ name: "", codename: "", description: "", tech_stack: "", folder: "", mode: "scratch", repository_url: "" })
   const [newTask, setNewTask] = useState({ title: "", description: "", priority: "medium", project_id: "", task_mode: "developer" })
@@ -230,6 +236,19 @@ export default function ProjectsPage() {
         }
         setError(e.message)
       }
+    }
+  }
+
+  const useCloudWorkspace = async (projectId: string) => {
+    setError("")
+    try {
+      const res = await fetch(`/api/projects/${projectId}/use-cloud-workspace`, { method: "POST" })
+      const data = await res.json()
+      if (data.error) { setError(data.error); return }
+      setError(`Cloud workspace ready: ${data.folder}`)
+      fetchData()
+    } catch (e: any) {
+      setError(e.message)
     }
   }
 
@@ -622,10 +641,15 @@ export default function ProjectsPage() {
                 Project Folder {newProject.mode === "prebuilt" ? <span className="text-red-400">*</span> : <span className="text-muted-foreground">(optional)</span>}
               </label>
               <div className="flex gap-2">
-                <input value={newProject.folder} readOnly placeholder="Click Browse to select a folder..." className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono" />
-                <button onClick={() => pickFolder((path) => setNewProject((p) => ({ ...p, folder: path })))}
-                  className="rounded-lg bg-secondary px-3 py-2 text-sm">Browse</button>
+                <input value={newProject.folder} readOnly placeholder={agentConnected ? "Click Browse to select a folder..." : "Auto-created in a cloud workspace on the server"} className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm font-mono" />
+                {!isNative && (
+                  <button onClick={() => pickFolder((path) => setNewProject((p) => ({ ...p, folder: path })))}
+                    className="rounded-lg bg-secondary px-3 py-2 text-sm">Browse</button>
+                )}
               </div>
+              {!agentConnected && (
+                <p className="text-xs text-cyan-400 mt-2">☁ No PC agent connected — this project will build in a cloud workspace on the AIED server. No folder selection needed.</p>
+              )}
             </div>
 
             <div className="flex gap-2 justify-end">
@@ -728,16 +752,22 @@ export default function ProjectsPage() {
                 <span>{project.tasks_count} tasks</span>
                 <span>{project.status}</span>
               </div>
-              <div className="flex gap-1">
-                <button onClick={() => pickFolder(async (path) => {
-                    await fetch(`/api/projects/${project.id}/set-folder`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ folder: path }),
-                    })
-                    fetchData()
-                  })}
-                  className="text-xs bg-secondary px-2 py-1 rounded hover:bg-secondary/80">{project.folder ? "Change Folder" : "Set Folder"}</button>
+              <div className="flex flex-wrap gap-1">
+                <button onClick={() => useCloudWorkspace(project.id)}
+                  className="text-xs bg-cyan-600/20 text-cyan-300 px-2 py-1 rounded hover:bg-cyan-600/30">
+                  ☁ {agentConnected ? "Use Server Workspace" : "Use Cloud Workspace"}
+                </button>
+                {!isNative && (
+                  <button onClick={() => pickFolder(async (path) => {
+                      await fetch(`/api/projects/${project.id}/set-folder`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ folder: path }),
+                      })
+                      fetchData()
+                    })}
+                    className="text-xs bg-secondary px-2 py-1 rounded hover:bg-secondary/80">{project.folder ? "Change Folder" : "Set Folder"}</button>
+                )}
                 <button onClick={() => startEditProject(project)}
                   className="text-xs bg-secondary px-2 py-1 rounded hover:bg-secondary/80">Edit</button>
                 <button onClick={() => deleteProject(project.id)}

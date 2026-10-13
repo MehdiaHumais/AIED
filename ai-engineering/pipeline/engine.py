@@ -4395,10 +4395,55 @@ Create an improved plan that addresses all her concerns.""",
         # Kill the runner task (cancels the server-side subprocess tree too).
         self.cancel_task(task_id)
 
+    def _ensure_server_folder(self, task: "PipelineTask") -> None:
+        """Guarantee the task has a writable project folder before building.
+
+        When no Local Agent PC is connected and the user never picked a folder,
+        build in a server-side (cloud) workspace so the pipeline can actually write
+        files and run commands. Without this, the build layer writes nothing and
+        fails with 'agents produced no valid files'.
+        """
+        user_id = getattr(task, "user_id", "") or ""
+        folder = (getattr(task, "project_folder", "") or "").strip()
+        if user_id and self._agent_connected(user_id):
+            return
+        if folder and os.path.isdir(folder):
+            return
+        try:
+            base = os.path.normpath(
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "projects")
+            )
+            owner = re.sub(r"[^A-Za-z0-9._-]+", "-", user_id).strip("-._")[:32] or "shared"
+            raw = (getattr(task, "project_name", "") or getattr(task, "project_id", "") or "project").strip()
+            name = re.sub(r"[^A-Za-z0-9._-]+", "-", raw).strip("-._")[:40] or "project"
+            suffix = (getattr(task, "project_id", "") or "")[:8]
+            if suffix:
+                name = f"{name}-{suffix}"
+            path = os.path.normpath(os.path.join(base, owner, name))
+            os.makedirs(path, exist_ok=True)
+            task.project_folder = path
+            task.add_history("cloud_workspace", f"Using server cloud workspace: {path}")
+            self._persist()
+            print(f"[PIPELINE] Cloud workspace for {task.task_id}: {path}")
+            hermes = getattr(self, "hermes", None)
+            proj_id = getattr(task, "project_id", "") or ""
+            if hermes and proj_id and getattr(hermes, "projects", None) and proj_id in hermes.projects:
+                proj = hermes.projects[proj_id]
+                if not (getattr(proj, "folder", "") or ""):
+                    proj.folder = path
+                    try:
+                        from agents.hermes.orchestrator import _persist_hermes
+                        _persist_hermes(hermes)
+                    except Exception:
+                        pass
+        except Exception as e:
+            print(f"[PIPELINE] Cloud workspace setup failed for {getattr(task, 'task_id', '?')}: {e}")
+
     async def _run_building(self, task: PipelineTask):
         """Run Frontend + Backend agents in parallel."""
         print(f"[PIPELINE] _run_building STARTED for task {task.task_id}")
         try:
+            self._ensure_server_folder(task)
 
             build_context = f"""Project: {task.project_name}
 Description: {task.project_description}

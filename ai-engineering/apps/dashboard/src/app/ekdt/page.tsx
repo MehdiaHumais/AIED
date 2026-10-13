@@ -330,7 +330,7 @@ export default function EkdtPage() {
       <div className="space-y-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight flex flex-wrap items-center gap-2 sm:gap-3">
               <Database className="h-8 w-8 text-cyan-500" />
               Enterprise Knowledge &amp; Digital Twin
               <span className="text-sm font-medium text-muted-foreground bg-secondary/60 rounded-full px-3 py-1">Layer 10</span>
@@ -497,7 +497,7 @@ export default function EkdtPage() {
           <p className="text-sm text-muted-foreground mb-4">The twelve systems that keep the twin alive - every agent connects here before it works.</p>
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
             {departments.map((dept) => (
-              <div key={dept.id} className="rounded-lg border border-border/50 bg-background/50 p-4">
+              <div key={dept.id} className="min-w-0 rounded-lg border border-border/50 bg-background/50 p-4">
                 <div className="flex items-center gap-3">
                   <div className="rounded-lg p-2 bg-cyan-500/10">
                     {dept.is_coordinator ? (

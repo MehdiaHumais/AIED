@@ -59,7 +59,7 @@ export default function SignupPage() {
 
   if (success) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="h-full bg-background flex items-center justify-center p-4 overflow-y-auto">
         <div className="w-full max-w-md">
           <div className="rounded-xl border border-border bg-card p-8 shadow-lg text-center">
             <div className="w-16 h-16 rounded-full bg-yellow-500/10 flex items-center justify-center mx-auto mb-4">
@@ -79,7 +79,7 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+    <div className="h-full bg-background flex items-center justify-center p-4 overflow-y-auto">
       <div className="absolute top-4 right-4">
         <button onClick={toggle} className="rounded-lg p-2 hover:bg-secondary transition-colors border border-border" title="Toggle theme">
           {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}

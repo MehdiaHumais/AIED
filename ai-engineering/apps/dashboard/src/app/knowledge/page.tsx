@@ -19,6 +19,7 @@ import {
   Pencil,
   Check,
   X,
+  Menu,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -42,6 +43,7 @@ export default function Layer1Page() {
   const [briefing, setBriefing] = useState<Briefing | null>(null)
   const [briefingLoading, setBriefingLoading] = useState(false)
   const [showKB, setShowKB] = useState(false)
+  const [showConvList, setShowConvList] = useState(false)
 
   const [conversations, setConversations] = useState<ConvSummary[]>([])
   const [activeConv, setActiveConv] = useState<CEOConv | null>(null)
@@ -134,12 +136,23 @@ export default function Layer1Page() {
 
   return (
     <DashboardLayout>
-      <div className="h-[calc(100vh-4rem)] flex -m-6">
+      <div className="relative h-[calc(var(--app-vh)-4rem)] flex -m-4 lg:-m-6">
+        {/* Mobile conversation list drawer */}
+        {showConvList && (
+          <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={() => setShowConvList(false)} />
+        )}
         {/* Conversations Sidebar */}
-        <div className="w-64 border-r border-border bg-card flex flex-col shrink-0">
-          <div className="p-3 border-b border-border">
+        <div className={cn(
+          "bg-card border-r border-border flex flex-col shrink-0",
+          "fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] transition-transform duration-200 lg:static lg:z-auto lg:w-64 lg:translate-x-0",
+          showConvList ? "translate-x-0" : "-translate-x-full"
+        )}>
+          <div className="p-3 border-b border-border flex items-center gap-2">
+            <button onClick={() => setShowConvList(false)} className="p-1.5 rounded-lg hover:bg-accent text-muted-foreground lg:hidden">
+              <X className="h-4 w-4" />
+            </button>
             <button onClick={createConversation} disabled={creating}
-              className="w-full flex items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 py-2.5 text-sm font-medium hover:bg-accent disabled:opacity-50 transition-colors">
+              className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 py-2.5 text-sm font-medium hover:bg-accent disabled:opacity-50 transition-colors">
               {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
               New Chat
             </button>
@@ -157,7 +170,7 @@ export default function Layer1Page() {
                   "group flex items-center gap-2 rounded-lg px-3 py-2.5 cursor-pointer transition-colors",
                   activeConv?.id === c.id ? "bg-accent" : "hover:bg-accent/50"
                 )}
-                onClick={() => { if (renamingId !== c.id) loadConversation(c.id) }}>
+                onClick={() => { if (renamingId !== c.id) { loadConversation(c.id); setShowConvList(false) } }}>
                 <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <div className="flex-1 min-w-0">
                   {renamingId === c.id ? (
@@ -202,10 +215,13 @@ export default function Layer1Page() {
         <div className="flex-1 flex flex-col min-w-0">
           {/* Chat header */}
           <div className="h-12 border-b border-border flex items-center px-4 justify-between shrink-0">
-            <div className="flex items-center gap-2">
-              <Bot className="h-5 w-5 text-primary" />
-              <span className="text-sm font-semibold">Layer 1 — CEO Chat</span>
-              {activeConv && <span className="text-xs text-muted-foreground">/ {activeConv.project_name}</span>}
+            <div className="flex items-center gap-2 min-w-0">
+              <button onClick={() => setShowConvList(true)} className="p-1.5 -ml-1.5 rounded-lg hover:bg-accent text-muted-foreground lg:hidden" aria-label="Show conversations">
+                <Menu className="h-5 w-5" />
+              </button>
+              <Bot className="h-5 w-5 text-primary shrink-0" />
+              <span className="text-sm font-semibold whitespace-nowrap">Layer 1 — CEO Chat</span>
+              {activeConv && <span className="text-xs text-muted-foreground truncate">/ {activeConv.project_name}</span>}
             </div>
             {activeConv && (
               <span className={cn("text-[10px] font-medium px-2 py-0.5 rounded-full",
@@ -318,7 +334,10 @@ export default function Layer1Page() {
 
         {/* Knowledge Base Panel (slide-in) */}
         {showKB && (
-          <div className="w-80 border-l border-border bg-card flex flex-col shrink-0">
+          <div className={cn(
+            "bg-card border-l border-border flex flex-col shrink-0",
+            "fixed inset-0 z-50 w-full lg:static lg:inset-auto lg:z-auto lg:w-80"
+          )}>
             <div className="p-3 border-b border-border flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <BookMarked className="h-4 w-4 text-primary" />

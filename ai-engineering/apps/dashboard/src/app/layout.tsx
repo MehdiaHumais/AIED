@@ -5,6 +5,7 @@ import { Inter } from "next/font/google"
 import { ThemeProvider } from "@/components/theme-provider"
 import { AuthProvider } from "@/components/auth-provider"
 import "./globals.css"
+import "@/lib/fetch-patch"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -35,7 +36,7 @@ export default function RootLayout({
       <body className={inter.className}>
         <ThemeProvider>
           <AuthProvider>
-            <div className="min-h-screen bg-background text-foreground">
+            <div className="h-full bg-background text-foreground safe-area-pad">
               {children}
             </div>
           </AuthProvider>

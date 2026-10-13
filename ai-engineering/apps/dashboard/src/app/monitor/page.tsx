@@ -423,14 +423,14 @@ function MonitorPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Build Monitor</h1>
             <p className="text-muted-foreground">
               {activePipelines.length} active | {completedPipelines.length} completed | {allPipelines.length} total
             </p>
           </div>
-          <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2">
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card px-3 py-2">
             <span className="text-xs font-medium text-muted-foreground">Ask Approval Before Each Step</span>
             <button
               onClick={() => toggleStepApproval(!requireStepApproval)}
@@ -453,16 +453,16 @@ function MonitorPage() {
         </div>
 
         {allPipelines.length === 0 && (
-          <div className="rounded-lg border border-border bg-card p-12 text-center">
+          <div className="rounded-lg border border-border bg-card p-6 text-center sm:p-12">
             <p className="text-muted-foreground text-lg">No builds yet</p>
             <p className="text-muted-foreground text-sm mt-2">Go to Projects and click "Start Building" on a task</p>
           </div>
         )}
 
         {allPipelines.length > 0 && (
-          <div className="grid grid-cols-12 gap-6">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-12 lg:gap-6">
             {/* Left: Pipeline List */}
-            <div className="col-span-4 space-y-2 max-h-[80vh] overflow-y-auto">
+            <div className="space-y-2 max-h-64 overflow-y-auto lg:col-span-4 lg:max-h-[80vh]">
               {allPipelines.map((p) => {
                 const progress = getProgress(p.stage)
                 const isActive = !["completed", "failed", "idle"].includes(p.stage)
@@ -516,9 +516,9 @@ function MonitorPage() {
             </div>
 
             {/* Right: Detail View */}
-            <div className="col-span-8">
+            <div className="lg:col-span-8">
               {!expanded && (
-                <div className="rounded-lg border border-border bg-card p-12 text-center">
+                <div className="rounded-lg border border-border bg-card p-6 text-center sm:p-12">
                   <p className="text-muted-foreground">Select a build to view details</p>
                 </div>
               )}
@@ -527,12 +527,12 @@ function MonitorPage() {
                 <div className="rounded-lg border border-border bg-card overflow-hidden">
                   {/* Header */}
                   <div className={`p-4 border-b border-border ${stageColors[expanded.stage]}`}>
-                    <div className="flex items-center justify-between">
-                      <div>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
                         <h3 className="font-semibold">{expanded.title}</h3>
                         <p className="text-xs text-muted-foreground">{expanded.description}</p>
                       </div>
-                      <div className="text-right">
+                      <div className="text-right shrink-0">
                         <span className="text-lg font-bold">{stageIcons[expanded.stage]}</span>
                         <p className="text-xs font-medium">{stageLabels[expanded.stage]}</p>
                       </div>
@@ -570,11 +570,11 @@ function MonitorPage() {
                       if (!run) return null
                       return (
                         <div className="mt-3 rounded-lg border border-green-500/30 bg-green-500/5 px-4 py-3">
-                          <div className="flex items-center justify-between mb-2">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-2">
                             <h4 className="text-xs font-bold text-green-300 uppercase tracking-wide">
                               ▶ How to Run This Project
                             </h4>
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                               {expanded.project_folder && (
                                 <button
                                   onClick={() => downloadZip(expanded.task_id)}
@@ -647,12 +647,12 @@ function MonitorPage() {
                   </div>
 
                   {/* Tabs */}
-                  <div className="flex border-b border-border">
+                  <div className="flex overflow-x-auto border-b border-border">
                     {(["build", "plan", "check", "todo", "commands", "files", "history"] as const).map((tab) => (
                       <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
-                        className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${
+                        className={`shrink-0 whitespace-nowrap px-3 py-2 text-xs font-medium border-b-2 transition-colors sm:px-4 ${
                           activeTab === tab
                             ? "border-primary text-primary"
                             : "border-transparent text-muted-foreground hover:text-foreground"
@@ -806,7 +806,7 @@ function MonitorPage() {
                             placeholder="e.g. Add a login page, Remove the settings section, Change the button colors to blue..."
                             className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm h-20 resize-none"
                           />
-                          <div className="flex gap-2">
+                          <div className="flex flex-wrap gap-2">
                             <button onClick={() => submitIssue(expanded.task_id)}
                               disabled={!issueDesc.trim()}
                               className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-40 disabled:cursor-not-allowed">
@@ -1188,7 +1188,7 @@ function MonitorPage() {
 
         {/* Rejection Modal */}
         {showRejectModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 safe-modal">
             <div className="rounded-xl border border-border bg-card p-6 w-full max-w-md space-y-4">
               <h3 className="font-semibold">Reject Plan -- Feedback</h3>
               <textarea value={rejectionFeedback} onChange={(e) => setRejectionFeedback(e.target.value)}
@@ -1207,7 +1207,7 @@ function MonitorPage() {
         )}
 
         {showDeployModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 safe-modal">
             <div className="rounded-xl border border-border bg-card p-6 w-full max-w-lg space-y-4 max-h-[90vh] overflow-y-auto">
               <h3 className="font-semibold text-emerald-400">Deploy to BritStore</h3>
 

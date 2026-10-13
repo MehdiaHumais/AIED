@@ -19,11 +19,11 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   }, [sidebarOpen])
 
   return (
-    <div className="relative flex h-screen overflow-hidden">
+    <div className="relative flex h-full overflow-hidden overscroll-none">
       <Sidebar mobileOpen={sidebarOpen} onClose={closeSidebar} />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <Header onMenuClick={() => setSidebarOpen(true)} />
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain p-4 lg:p-6">
           {children}
         </main>
       </div>

@@ -72,7 +72,7 @@ export default function LandingPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="h-full bg-background flex items-center justify-center overflow-y-auto">
         <p className="text-muted-foreground">Loading...</p>
       </div>
     )
@@ -83,7 +83,7 @@ export default function LandingPage() {
   const loggedInUser = user ? user : null
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="h-full bg-background overflow-y-auto">
       {/* Nav */}
       <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border bg-background/80 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">

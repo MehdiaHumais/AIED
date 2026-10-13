@@ -303,7 +303,7 @@ export default function CompanyPage() {
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex gap-1 rounded-xl border border-border bg-muted/50 p-1 w-fit">
+        <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-muted/50 p-1 w-full sm:w-fit">
           {[
             { key: "profile" as const, label: "Company Profile", icon: Building2 },
             { key: "projects" as const, label: "Projects", icon: FolderOpen },
@@ -313,7 +313,7 @@ export default function CompanyPage() {
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
               className={cn(
-                "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-all",
+                "flex items-center gap-2 rounded-lg px-3 sm:px-4 py-2 text-sm font-medium transition-all whitespace-nowrap",
                 activeTab === tab.key
                   ? "bg-background shadow-sm text-foreground"
                   : "text-muted-foreground hover:text-foreground"

@@ -586,6 +586,9 @@ async def create_project(data: dict):
         project.repository_url = data["repository_url"].strip()
     if data.get("mode"):
         project.mode = data["mode"]
+    _uid = data.get("user_id", "")
+    if not getattr(project, "folder", "") and not _agent_online(_uid):
+        project.folder = _server_workspace(_uid, getattr(project, "codename", ""), project.id)
     _persist_both(hermes, app_state["pipeline"])
     return {
         "project": {
@@ -838,6 +841,39 @@ async def list_agent_logs(agent_id: str | None = None):
 import os
 
 PROJECTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "projects")
+
+import re as _re
+
+
+def _slugify(value: str, fallback: str = "project") -> str:
+    slug = _re.sub(r"[^A-Za-z0-9._-]+", "-", (value or "").strip()).strip("-._")
+    return slug or fallback
+
+
+def _server_workspace(user_id: str, codename: str = "", project_id: str = "") -> str:
+    """Absolute path of a project's server-side (cloud) workspace, created on demand.
+
+    Used when no Local Agent PC is connected so the build runs on the AIED server
+    itself. Files written and commands run here stay on the server.
+    """
+    owner = _slugify(user_id, "shared")[:32]
+    name = _slugify(codename or project_id, "project")[:40]
+    suffix = (project_id or "")[:8]
+    if suffix:
+        name = f"{name}-{suffix}"
+    path = os.path.normpath(os.path.join(PROJECTS_DIR, owner, name))
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _agent_online(user_id: str) -> bool:
+    """True only if a Local Agent PC is connected for this user."""
+    if not user_id:
+        return False
+    try:
+        return bool(agent_manager.is_connected(user_id))
+    except Exception:
+        return False
 
 
 @app.post("/api/files/write")
@@ -1847,7 +1883,17 @@ async def set_project_folder(project_id: str, data: dict):
     if not project:
         return {"error": "Project not found"}
 
-    project.folder = data.get("folder", "")
+    user_id = getattr(project, "user_id", "") or ""
+    requested = (data.get("folder") or "").strip()
+    if requested and _agent_online(user_id):
+        # A Local Agent PC is connected: use the folder the user picked there.
+        project.folder = requested
+    elif requested and os.path.isdir(requested):
+        # A real folder that exists on the server itself.
+        project.folder = os.path.normpath(requested)
+    else:
+        # No PC agent: build inside the project's server-side (cloud) workspace.
+        project.folder = _server_workspace(user_id, getattr(project, "codename", ""), project_id)
 
     _persist_both(hermes, pipeline)
 
@@ -1858,8 +1904,7 @@ async def set_project_folder(project_id: str, data: dict):
             pt.project_folder = project.folder
     _persist_both(hermes, pipeline)
 
-    user_id = getattr(project, "user_id", "") or ""
-    if user_id and project.folder:
+    if user_id and project.folder and _agent_online(user_id):
         try:
             await agent_manager.update_project_folder(user_id, project.folder)
         except Exception as e:
@@ -1869,6 +1914,29 @@ async def set_project_folder(project_id: str, data: dict):
         "status": "ok",
         "folder": project.folder,
     }
+
+
+@app.post("/api/projects/{project_id}/use-cloud-workspace")
+async def use_cloud_workspace(project_id: str):
+    """Point a project at its server-side (cloud) workspace so it can build
+    with no PC agent connected. Creates the folder on the AIED server."""
+    hermes: HermesOrchestrator = app_state["hermes"]
+    pipeline: Pipeline = app_state["pipeline"]
+
+    project = hermes.projects.get(project_id)
+    if not project:
+        return {"error": "Project not found"}
+
+    project.folder = _server_workspace(
+        getattr(project, "user_id", "") or "", getattr(project, "codename", ""), project_id
+    )
+
+    for pt in getattr(pipeline, "tasks", {}).values():
+        if getattr(pt, "project_id", "") == project_id:
+            pt.project_folder = project.folder
+    _persist_both(hermes, pipeline)
+
+    return {"status": "ok", "folder": project.folder}
 
 
 @app.post("/api/projects/{project_id}/set-mode")
@@ -1931,6 +1999,32 @@ async def clone_project_repo(project_id: str, data: dict):
         return {"error": "Project has no owner user_id"}
 
     target_folder = (data.get("folder") or "").strip()
+
+    if not _agent_online(user_id):
+        # No PC agent connected: clone on the AIED server into the project's cloud workspace.
+        workspace = _server_workspace(user_id, getattr(project, "codename", ""), project_id)
+        clone_dir = workspace if not os.listdir(workspace) else os.path.join(workspace, "repo")
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "git", "clone", "--depth", "1", repo_url, clone_dir,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            out, err = await proc.communicate()
+        except FileNotFoundError:
+            return {"error": "git is not installed on the server"}
+        except Exception as e:
+            return {"error": f"Server clone error: {e}"}
+        if proc.returncode != 0:
+            msg = (err or out).decode("utf-8", errors="replace").strip()[-500:]
+            return {"error": f"Server git clone failed: {msg}"}
+        project.folder = os.path.normpath(clone_dir)
+        project.repository_url = repo_url
+        for pt in getattr(pipeline, "tasks", {}).values():
+            if getattr(pt, "project_id", "") == project_id:
+                pt.project_folder = project.folder
+        _persist_both(hermes, pipeline)
+        return {"status": "ok", "folder": project.folder, "result": {"success": True, "path": project.folder}}
+
     if not target_folder:
         try:
             pick = await agent_manager.select_folder(user_id)

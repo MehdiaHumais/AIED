@@ -5,6 +5,21 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+/** True when running inside the native Capacitor app (Android APK), false in a browser. */
+export function isNativeApp() {
+  if (typeof window === "undefined") return false
+  const cap = (window as any).Capacitor
+  if (!cap) return false
+  if (typeof cap.isNativePlatform === "function") {
+    try {
+      return !!cap.isNativePlatform()
+    } catch {
+      return false
+    }
+  }
+  return cap.platform ? cap.platform !== "web" : false
+}
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || ""
 
 export async function apiFetch<T>(
