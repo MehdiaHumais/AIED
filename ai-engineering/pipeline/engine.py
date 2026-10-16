@@ -448,7 +448,20 @@ class Pipeline:
     def _spawn_task(self, coro, task_id: str = "", user_id: str = "", label: str = ""):
         """Create a background task that won't be garbage collected."""
         self._debug_log(f"SPAWN task_id={task_id}")
-        task = asyncio.create_task(coro)
+
+        async def _runner():
+            # Ensure BYOK (per-user LLM keys) are used for this task's AI calls.
+            # Only override if we actually have a user id; otherwise keep whatever
+            # context was inherited from the request that spawned this task.
+            if user_id:
+                try:
+                    from llms.manager import set_current_user
+                    set_current_user(user_id)
+                except Exception:
+                    pass
+            return await coro
+
+        task = asyncio.create_task(_runner())
         self._background_tasks.add(task)
         if task_id:
             self._task_bg_map.setdefault(task_id, []).append(task)

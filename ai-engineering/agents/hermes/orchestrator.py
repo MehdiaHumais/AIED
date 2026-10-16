@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from agents.prompts import AGENT_PROMPTS, AGENT_CAPABILITIES, get_agent_prompt
-from llms.manager import LLMManager
+from llms.manager import LLMManager, set_current_agent
 from shared.config import AppConfig
 from shared.models import (
     AgentConfig,
@@ -445,15 +445,19 @@ Output as JSON with this structure:
             ]
 
             # Call the LLM - let the manager decide provider based on model
-            response = await asyncio.wait_for(
-                self.llm.chat(
-                    messages=messages,
-                    model=agent.model_name,
-                    temperature=0.3,
-                    max_tokens=_agent_max_tokens(agent_id),
-                ),
-                timeout=180,
-            )
+            set_current_agent(agent_id)
+            try:
+                response = await asyncio.wait_for(
+                    self.llm.chat(
+                        messages=messages,
+                        model=agent.model_name,
+                        temperature=0.3,
+                        max_tokens=_agent_max_tokens(agent_id),
+                    ),
+                    timeout=180,
+                )
+            finally:
+                set_current_agent("")
 
             # Update task with result
             task.status = TaskStatus.COMPLETED
@@ -611,15 +615,19 @@ Output as JSON with this structure:
             provider = self.llm._get_provider_for_model(agent.model_name)
             logger.info(f"Agent {agent_id} using provider={provider}, model={agent.model_name}")
 
-            response = await asyncio.wait_for(
-                self.llm.chat(
-                    messages=messages,
-                    model=agent.model_name,
-                    temperature=0.3,
-                    max_tokens=_agent_max_tokens(agent_id),
-                ),
-                timeout=900,
-            )
+            set_current_agent(agent_id)
+            try:
+                response = await asyncio.wait_for(
+                    self.llm.chat(
+                        messages=messages,
+                        model=agent.model_name,
+                        temperature=0.3,
+                        max_tokens=_agent_max_tokens(agent_id),
+                    ),
+                    timeout=900,
+                )
+            finally:
+                set_current_agent("")
 
             logger.info(f"Agent {agent_id} responded ({len(response)} chars)")
 

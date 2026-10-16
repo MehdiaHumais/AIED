@@ -37,7 +37,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from agents.hermes.orchestrator import HermesOrchestrator
 from agents.openclaw.engine import OpenClawEngine
-from llms.manager import LLMManager
+from llms.manager import LLMManager, set_current_user
+import llms.user_keys as user_llm_keys
 from pipeline.engine import Pipeline
 from memory.postgres.database import MemoryStore
 from apps.api.agent_server import agent_manager
@@ -298,8 +299,151 @@ async def health_check():
     return {
         "status": "healthy",
         "version": config.version,
-        "agents": len(app_state.get("hermes", HermesOrchestrator.__new__(HermesOrchestrator)).agents) if "hermes" in app_state else 0,
+        "agents": len(app_state.get("hermes").agents) if app_state.get("hermes") else 0,
     }
+
+
+# --- Per-user LLM API keys (BYOK) ---
+
+def _auth_uid(token: str) -> str:
+    """Resolve a JWT to its user id (best effort)."""
+    if not token:
+        return ""
+    try:
+        from apps.api.auth import get_user_from_token
+        result = get_user_from_token(token)
+        if isinstance(result, dict):
+            return result.get("user_id") or result.get("sub") or ""
+        if isinstance(result, str):
+            return result
+    except Exception:
+        pass
+    return ""
+
+
+def _use_user_llm(token: str) -> str:
+    """Set the active LLM user for this request so BYOK keys are preferred."""
+    uid = _auth_uid(token)
+    set_current_user(uid)
+    return uid
+
+
+@app.get("/api/llm-keys/providers")
+async def llm_key_providers():
+    """Provider catalog for the BYOK dropdown."""
+    return {"providers": user_llm_keys.catalog()}
+
+
+@app.get("/api/llm-keys")
+async def llm_keys_list(token: str = ""):
+    """List the current user's saved LLM keys (masked)."""
+    uid = _auth_uid(token)
+    if not uid:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    return {"keys": user_llm_keys.masked_list(uid)}
+
+
+@app.post("/api/llm-keys")
+async def llm_keys_save(data: dict = Body(...)):
+    """Save (or replace) a provider API key for the current user."""
+    uid = _auth_uid(data.get("token", ""))
+    if not uid:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    provider = (data.get("provider") or "").strip().lower()
+    api_key = (data.get("api_key") or "").strip()
+    if not provider:
+        return JSONResponse({"error": "provider is required"}, status_code=400)
+    if not api_key:
+        return JSONResponse({"error": "api_key is required"}, status_code=400)
+    meta = user_llm_keys.provider_meta(provider)
+    base_url = (data.get("base_url") or "").strip()
+    if not meta and not base_url:
+        return JSONResponse(
+            {"error": "base_url is required for a custom provider"}, status_code=400
+        )
+    user_llm_keys.set_user_key(
+        uid,
+        provider,
+        api_key,
+        base_url=(data.get("base_url") or None),
+        model=(data.get("model") or None),
+    )
+    _mgr = app_state.get("llm_manager")
+    if _mgr:
+        _mgr.clear_key_error(uid, provider)
+    return {"keys": user_llm_keys.masked_list(uid)}
+
+
+@app.delete("/api/llm-keys/{provider}")
+async def llm_keys_delete(provider: str, token: str = ""):
+    """Remove a saved provider key for the current user."""
+    uid = _auth_uid(token)
+    if not uid:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    user_llm_keys.remove_user_key(uid, provider.strip().lower())
+    _mgr = app_state.get("llm_manager")
+    if _mgr:
+        _mgr.clear_key_error(uid, provider.strip().lower())
+    return {"keys": user_llm_keys.masked_list(uid)}
+
+
+@app.get("/api/llm-keys/agents")
+async def llm_keys_agents(token: str = ""):
+    """List agents with their default provider and the user's per-agent pin."""
+    uid = _auth_uid(token)
+    if not uid:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    hermes = app_state.get("hermes")
+    assignments = user_llm_keys.get_agent_providers(uid)
+    agents = []
+    if hermes:
+        for a in hermes.agents.values():
+            default_provider = ""
+            try:
+                raw = hermes.llm._get_provider_for_model(a.model_name)
+                default_provider = getattr(raw, "value", str(raw)).lower()
+            except Exception:
+                default_provider = ""
+            agents.append(
+                {
+                    "id": a.id,
+                    "name": a.name,
+                    "department": a.department,
+                    "model": a.model_name,
+                    "default_provider": default_provider,
+                    "assigned_provider": assignments.get(a.id, ""),
+                }
+            )
+    return {"agents": agents, "providers": user_llm_keys.catalog()}
+
+
+@app.post("/api/llm-keys/agent")
+async def llm_keys_set_agent(data: dict = Body(...)):
+    """Pin a provider (from the user's saved keys) to a specific agent."""
+    uid = _auth_uid(data.get("token", ""))
+    if not uid:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    agent_id = (data.get("agent_id") or "").strip()
+    provider = (data.get("provider") or "").strip().lower()
+    if not agent_id:
+        return JSONResponse({"error": "agent_id is required"}, status_code=400)
+    if provider and user_llm_keys.provider_meta(provider) is None and provider not in user_llm_keys.get_user_keys(uid):
+        return JSONResponse(
+            {"error": "Unknown provider - add this key first"}, status_code=400
+        )
+    user_llm_keys.set_agent_provider(uid, agent_id, provider)
+    return {"agents": user_llm_keys.get_agent_providers(uid)}
+
+
+@app.get("/api/llm-keys/status")
+async def llm_keys_status(token: str = ""):
+    """Return recent failures of the user's own keys (for the settings warning)."""
+    uid = _auth_uid(token)
+    if not uid:
+        return JSONResponse({"error": "Not authenticated"}, status_code=401)
+    mgr = app_state.get("llm_manager")
+    errors = mgr.key_errors(uid) if mgr else []
+    return {"errors": errors}
 
 
 # --- Auth ---
@@ -745,6 +889,7 @@ async def get_agent(agent_id: str):
 @app.post("/api/agents/{agent_id}/chat")
 async def chat_with_agent(agent_id: str, data: dict):
     """Chat directly with an agent."""
+    _use_user_llm(data.get("token", ""))
     hermes: HermesOrchestrator = app_state["hermes"]
     result = await hermes.chat_with_agent(
         agent_id=agent_id,
@@ -760,6 +905,7 @@ async def chat_with_agent(agent_id: str, data: dict):
 @app.post("/api/orchestrate")
 async def orchestrate(data: dict):
     """Submit a business request to Hermes for orchestration."""
+    _use_user_llm(data.get("token", ""))
     hermes: HermesOrchestrator = app_state["hermes"]
     result = await hermes.process_request(
         request=data["request"],
@@ -774,6 +920,7 @@ async def orchestrate(data: dict):
 @app.post("/api/openclaw/execute")
 async def openclaw_execute(data: dict):
     """Execute a task with OpenClaw."""
+    _use_user_llm(data.get("token", ""))
     openclaw: OpenClawEngine = app_state["openclaw"]
     from shared.models import Task, TaskPriority, TaskStatus
     task = Task(
@@ -792,6 +939,7 @@ async def openclaw_execute(data: dict):
 @app.post("/api/openclaw/review")
 async def openclaw_review(data: dict):
     """Review code with OpenClaw."""
+    _use_user_llm(data.get("token", ""))
     openclaw: OpenClawEngine = app_state["openclaw"]
     result = await openclaw.review_code(
         code=data["code"],
@@ -2323,6 +2471,7 @@ async def board_submit_review(data: dict):
 
     wait=true blocks until the review finishes (useful for tests/CLI).
     """
+    _use_user_llm(data.get("token", ""))
     request = data.get("request", "").strip()
     if not request:
         return JSONResponse({"error": "request is required"}, status_code=400)
@@ -2487,6 +2636,7 @@ async def research_submit(data: dict):
 
     wait=true blocks until the research finishes (useful for tests/CLI).
     """
+    _use_user_llm(data.get("token", ""))
     request = data.get("request", "").strip()
     if not request:
         return JSONResponse({"error": "request is required"}, status_code=400)
@@ -2622,6 +2772,7 @@ async def ux_submit(data: dict):
 
     wait=true blocks until the review finishes (useful for tests/CLI).
     """
+    _use_user_llm(data.get("token", ""))
     request = data.get("request", "").strip()
     if not request:
         return JSONResponse({"error": "request is required"}, status_code=400)
@@ -2758,6 +2909,7 @@ async def design_submit(data: dict):
 
     wait=true blocks until the design finishes (useful for tests/CLI).
     """
+    _use_user_llm(data.get("token", ""))
     request = data.get("request", "").strip()
     if not request:
         return JSONResponse({"error": "request is required"}, status_code=400)
@@ -2896,6 +3048,7 @@ async def growth_submit(data: dict):
 
     wait=true blocks until the review finishes (useful for tests/CLI).
     """
+    _use_user_llm(data.get("token", ""))
     request = data.get("request", "").strip()
     if not request:
         return JSONResponse({"error": "request is required"}, status_code=400)
@@ -3035,6 +3188,7 @@ async def quality_submit(data: dict):
 
     wait=true blocks until the review finishes (useful for tests/CLI).
     """
+    _use_user_llm(data.get("token", ""))
     request = data.get("request", "").strip()
     if not request:
         return JSONResponse({"error": "request is required"}, status_code=400)
@@ -3324,6 +3478,7 @@ async def intelligence_submit(data: dict):
 
     wait=true blocks until the report finishes (useful for tests/CLI).
     """
+    _use_user_llm(data.get("token", ""))
     request = data.get("request", "").strip()
     if not request:
         return JSONResponse({"error": "request is required"}, status_code=400)
@@ -3464,6 +3619,7 @@ async def governance_submit(data: dict):
 
     wait=true blocks until the report finishes (useful for tests/CLI).
     """
+    _use_user_llm(data.get("token", ""))
     request = data.get("request", "").strip()
     if not request:
         return JSONResponse({"error": "request is required"}, status_code=400)
@@ -3606,6 +3762,7 @@ async def ekdt_submit(data: dict):
 
     wait=true blocks until the report finishes (useful for tests/CLI).
     """
+    _use_user_llm(data.get("token", ""))
     request = data.get("request", "").strip()
     if not request:
         return JSONResponse({"error": "request is required"}, status_code=400)
@@ -3911,6 +4068,7 @@ async def ceo_rename_conversation(conv_id: str, data: dict):
 @app.post("/api/ce/conversations/{conv_id}/chat")
 async def ceo_chat(conv_id: str, body: dict = Body(...)):
     """Send a message to the CEO agent."""
+    _use_user_llm(body.get("token", ""))
     import logging as _log; _log.getLogger(__name__).info(f"[CEO CHAT ENTERED] conv_id={conv_id}")
     try:
         message = body.get("message", "")
@@ -4129,6 +4287,7 @@ async def workflow_start(data: dict):
     through Research, UX, Design, Growth and Quality gates on each board
     approval. wait=true blocks until the run pauses or completes.
     """
+    _use_user_llm(data.get("token", ""))
     request = data.get("request", "").strip()
     if not request:
         return JSONResponse({"error": "request is required"}, status_code=400)

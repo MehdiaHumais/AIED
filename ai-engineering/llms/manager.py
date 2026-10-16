@@ -18,6 +18,7 @@ APIs    APIs         Models
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 import os
 import time
@@ -25,9 +26,72 @@ from typing import Any, AsyncIterator, Optional
 
 import httpx
 
+from llms.user_keys import get_user_keys, provider_meta, get_agent_provider
 from shared.config import LLMConfig, LLMProvider
 
 logger = logging.getLogger(__name__)
+
+# Per-request/per-task "current user" used to look up BYOK (bring-your-own-key)
+# credentials. Set by the API layer per request and by the pipeline per task.
+_CURRENT_USER: contextvars.ContextVar[str] = contextvars.ContextVar("aied_llm_user", default="")
+# Optional: the agent currently running, so a user can pin a provider per agent.
+_CURRENT_AGENT: contextvars.ContextVar[str] = contextvars.ContextVar("aied_llm_agent", default="")
+
+
+def set_current_user(user_id: str) -> None:
+    """Set the current user id for the active context (thread/task safe)."""
+    try:
+        _CURRENT_USER.set(user_id or "")
+    except Exception:
+        pass
+
+
+def get_current_user() -> str:
+    try:
+        return _CURRENT_USER.get()
+    except Exception:
+        return ""
+
+
+def set_current_agent(agent_id: str) -> None:
+    """Set the agent currently running for the active context."""
+    try:
+        _CURRENT_AGENT.set(agent_id or "")
+    except Exception:
+        pass
+
+
+def get_current_agent() -> str:
+    try:
+        return _CURRENT_AGENT.get()
+    except Exception:
+        return ""
+
+
+def _status_from_error(err: Exception) -> int:
+    import re as _re
+    text = str(err)
+    m = _re.search(r"\b(4\d\d|5\d\d)\b", text)
+    if m:
+        try:
+            return int(m.group(1))
+        except Exception:
+            return 0
+    return 0
+
+
+def _friendly_key_error(provider: str, err: Exception) -> str:
+    code = _status_from_error(err)
+    text = str(err).lower()
+    if code in (401, 403) or "unauthorized" in text or "invalid api key" in text or "invalid_api_key" in text:
+        return f"Your {provider} API key was rejected (invalid or expired). Update it in Settings."
+    if code == 429 or "rate limit" in text or "quota" in text:
+        return f"Your {provider} API key hit a rate limit or quota. Check your plan or try again later."
+    if code == 402 or "insufficient" in text or "billing" in text or "credit" in text:
+        return f"Your {provider} account has insufficient credits/billing. Top up or use another provider."
+    if code == 400:
+        return f"Your {provider} key request was rejected (400). Check the model/region for your key."
+    return f"Your {provider} API key failed: {str(err)[:160]}"
 
 # OpenRouter models that accept image_url content parts. First available one wins.
 VISION_MODELS = [
@@ -52,6 +116,9 @@ class LLMManager:
         self.config = config
         self._clients: dict[str, httpx.AsyncClient] = {}
         self._provider_map: dict[str, Any] = {}
+        self._user_clients: dict[str, httpx.AsyncClient] = {}
+        self._user_client_sig: dict[str, str] = {}
+        self._key_errors: dict[str, dict] = {}
         self._rate_semaphore = asyncio.Semaphore(1)
         self._last_request_time: float = 0.0
         self._min_delay = 4.0
@@ -188,6 +255,8 @@ class LLMManager:
             "openrouter": self.config.openrouter_model,
             "openai": self.config.openai_model,
             "anthropic": self.config.anthropic_model,
+            "xai": "grok-2-latest",
+            "groq": "llama-3.3-70b-versatile",
             "local": self.config.local_model,
             "omniroute": self.config.omniroute_model,
         }
@@ -212,6 +281,78 @@ class LLMManager:
                 base_url=base, headers=headers, timeout=timeout, verify=False,
             )
             print(f"[LLM] Recreated {provider_str} HTTP client")
+
+    # --- BYOK (per-user keys) -------------------------------------------------
+
+    def _user_chain(self, primary_provider: str) -> list[tuple[str, dict]]:
+        """Return the current user's saved keys as an ordered provider list.
+
+        The requested provider (if the user has a key for it) is tried first,
+        then the rest of the user's providers. Empty when no user context.
+        """
+        uid = get_current_user()
+        if not uid:
+            return []
+        keys = get_user_keys(uid)
+        if not keys:
+            return []
+        ordered: list[tuple[str, dict]] = []
+        if primary_provider in keys:
+            ordered.append((primary_provider, keys[primary_provider]))
+        for pid, info in keys.items():
+            if pid != primary_provider:
+                ordered.append((pid, info))
+        return ordered
+
+    def _client_for_user(self, provider: str, info: dict) -> httpx.AsyncClient | None:
+        """Build (and cache) an HTTP client for a user-supplied key."""
+        api_key = (info or {}).get("api_key", "")
+        base_url = (info or {}).get("base_url", "")
+        kind = (info or {}).get("kind") or (provider_meta(provider) or {}).get("kind", "openai")
+        if not api_key or not base_url:
+            return None
+        sig = f"{kind}:{api_key}:{base_url}"
+        if provider in self._user_clients and self._user_client_sig.get(provider) == sig:
+            return self._user_clients[provider]
+        headers = {"Authorization": f"Bearer {api_key}"}
+        if kind == "anthropic":
+            headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
+        client = httpx.AsyncClient(
+            base_url=base_url,
+            headers=headers,
+            timeout=httpx.Timeout(300.0, connect=30.0),
+            verify=False,
+        )
+        self._user_clients[provider] = client
+        self._user_client_sig[provider] = sig
+        return client
+
+    def _record_key_error(self, user_id: str, provider: str, err: Exception) -> None:
+        if not user_id:
+            return
+        self._key_errors[f"{user_id}:{provider}"] = {
+            "provider": provider,
+            "message": _friendly_key_error(provider, err),
+            "detail": str(err)[:300],
+            "status": _status_from_error(err),
+            "at": time.time(),
+        }
+
+    def clear_key_error(self, user_id: str, provider: str = "") -> None:
+        if not user_id:
+            return
+        if provider:
+            self._key_errors.pop(f"{user_id}:{provider}", None)
+        else:
+            for k in [k for k in self._key_errors if k.startswith(f"{user_id}:")]:
+                self._key_errors.pop(k, None)
+
+    def key_errors(self, user_id: str) -> list[dict]:
+        if not user_id:
+            return []
+        return [
+            v for k, v in self._key_errors.items() if k.startswith(f"{user_id}:")
+        ]
 
     async def chat(
         self,
@@ -247,6 +388,29 @@ class LLMManager:
         if fallback_provider and fallback_provider not in providers_to_try:
             providers_to_try.append(fallback_provider)
 
+        # BYOK: user keys, and optional per-agent provider pinning.
+        uid = get_current_user()
+        agent_id = get_current_agent()
+        user_entries = self._user_chain(primary_provider)
+        user_map = {pid: info for pid, info in user_entries}
+        user_ids = [pid for pid, _ in user_entries]
+
+        agent_pref = ""
+        if uid and agent_id:
+            agent_pref = get_agent_provider(uid, agent_id)
+            if agent_pref and agent_pref not in user_map:
+                self._record_key_error(
+                    uid, agent_pref, RuntimeError("No API key saved for this provider")
+                )
+                agent_pref = ""
+
+        if agent_pref:
+            # Pinned provider goes first, then the user's other keys, then platform.
+            ordered = [agent_pref] + [p for p in user_ids if p != agent_pref]
+            providers_to_try = ordered + [p for p in providers_to_try if p not in ordered]
+        elif user_entries:
+            providers_to_try = user_ids + [p for p in providers_to_try if p not in user_ids]
+
         last_error: Exception | None = None
 
         async with self._rate_semaphore:
@@ -262,12 +426,23 @@ class LLMManager:
 
             for attempt, raw_prov in enumerate(providers_to_try):
                 current_provider = getattr(raw_prov, "value", str(raw_prov)).lower()
-                client = self._clients.get(current_provider)
+                info = user_map.get(current_provider)
+                if info:
+                    client = self._client_for_user(current_provider, info)
+                    if not client:
+                        continue
+                else:
+                    client = self._clients.get(current_provider)
                 if not client:
                     logger.warning(f"Provider '{current_provider}' not configured, skipping")
                     continue
 
-                resolved_model = self._get_model_name(current_provider, model if attempt == 0 else None)
+                if current_provider == primary_provider:
+                    resolved_model = self._get_model_name(current_provider, model)
+                elif info:
+                    resolved_model = (info.get("model") or self._get_model_name(current_provider, None))
+                else:
+                    resolved_model = self._get_model_name(current_provider, None)
 
                 logger.info(f"LLM call: provider={current_provider}, model={resolved_model}, attempt={attempt+1}")
 
@@ -285,10 +460,14 @@ class LLMManager:
                             client, messages, resolved_model, temperature, max_tokens, **kwargs
                         )
                     logger.info(f"LLM success: {len(result)} chars from {current_provider}")
+                    if info:
+                        self.clear_key_error(uid, current_provider)
                     return result
                 except Exception as e:
                     last_error = e
                     err_str = str(e).lower()
+                    if info:
+                        self._record_key_error(uid, current_provider, e)
                     print(f"[LLM] Provider '{current_provider}' FAILED (attempt {attempt + 1}): type={type(e).__name__}: {str(e)[:200]}")
                     logger.warning(
                         f"Provider '{current_provider}' failed (attempt {attempt + 1}): {e}"
@@ -319,17 +498,19 @@ class LLMManager:
                             try:
                                 if current_provider == "anthropic":
                                     result = await self._chat_anthropic(
-                                        self._clients.get(current_provider), messages, resolved_model, temperature, max_tokens, **kwargs
+                                        client, messages, resolved_model, temperature, max_tokens, **kwargs
                                     )
                                 elif current_provider == "local":
                                     result = await self._chat_local(
-                                        self._clients.get(current_provider), messages, resolved_model, temperature, max_tokens, **kwargs
+                                        client, messages, resolved_model, temperature, max_tokens, **kwargs
                                     )
                                 else:
                                     result = await self._chat_openai_compatible(
-                                        self._clients.get(current_provider), messages, resolved_model, temperature, max_tokens, **kwargs
+                                        client, messages, resolved_model, temperature, max_tokens, **kwargs
                                     )
                                 logger.info(f"LLM success after DNS retry: {len(result)} chars from {current_provider}")
+                                if info:
+                                    self.clear_key_error(uid, current_provider)
                                 print(f"[LLM] Recovered after DNS retry {dns_attempt + 1}")
                                 return result
                             except Exception as e2:
@@ -392,9 +573,13 @@ class LLMManager:
         if last_error is None:
             last_error = RuntimeError("Unknown error - all providers skipped without attempt")
         print(f"[LLM] ALL PROVIDERS FAILED: Tried={providers_to_try}, last_error_type={type(last_error).__name__}, last_error={last_error}")
+        key_notes = self.key_errors(uid) if uid else []
+        suffix = ""
+        if key_notes:
+            suffix = " | " + " ".join(n["message"] for n in key_notes)
         raise RuntimeError(
             f"All providers failed. Tried: {providers_to_try}. "
-            f"Last error: {type(last_error).__name__}: {last_error}"
+            f"Last error: {type(last_error).__name__}: {last_error}{suffix}"
         )
 
     async def chat_with_images(
